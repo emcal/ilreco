@@ -8,8 +8,14 @@ Calorimeter reconstruction library
 git clone https://github.com/emcal/ilreco.git
 mkdir ilreco/build
 cd ilreco/build
+cmake ../src
+make          # build. One can just call `make install` 
+make install  # (!) tries to install in system /bin /lib etc.
 
-cmake ../
+
+# To install everything in the build directory instead of system lib
+# (kind of more development mode)
+cmake -L -DCMAKE_INSTALL_PREFIX=`pwd` -DCMAKE_BUILD_TYPE=Debug -DFLAT_INSTALL=ON ../src
 make
 
 ```
