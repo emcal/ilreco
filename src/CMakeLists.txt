@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.0)
-project('il_reconstruction')
+project('il_emcal_reconstruction')
 
 # Using flat installation (all files in the same directory)
 option(FLAT_INSTALL "Using flat installation (all files in the same directory)" OFF)

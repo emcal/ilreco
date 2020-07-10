@@ -6,43 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <unistd.h>
+#include "ilreco.h"
 
-#define _MADR0_   10000       // number of calorimeter modules
-#define _MADR_OFFSET_ 800     // number of calorimeter modules safety offset
-#define _MADR_    (_MADR0_+_MADR_OFFSET_)         // number of calorimeter modules with some safety addition
-#define _MCL_       200       // max number+1 of raw clusters
-#define _MADCGAM_   200       // max number+1 of reconstructed "particles"
-#define _NCOL_       34       // number of columns in calorimeter structure
-#define _NROW_       34       // number of   rows  in calorimeter structure
-#define _OFFSET_    100       // column offset in array addressing scheme
-#define _MAXLEN_    100       // max length (number of hits) in final reconstruction object ("particle")
-
-#define _MPK_        12       // max number of peaks in raw cluster
-
-#define _N_REC_METHODS_ 5     // number of coord. recosntruction methods reserved
-#define MIN_COUNTER_ENERGY  1.e-3
-#define CLUSTER_MIN_ENERGY  0.1
-#define _ZCAL_      732.      // target distance to calorimeter to define 2nd step separation cut
-
-#define PWO_CALOR 1
-#define LG_CALOR  2
-#define CALOR_MATERIAL PWO_CALOR
-
-#define _N_PROFILE_POINTS_  500 // number of 2d profile nods
-
-typedef struct {
-  double e;
-  double x[_N_REC_METHODS_];
-  double y[_N_REC_METHODS_];
-  double z[_N_REC_METHODS_];
-  double chi2;
-  int    size;              // number of hits
-  int    type;              // type of cluster (in most cases fiducial region of the calorimeter and if was merged from different subparts)
-  int      id;              // guessed particle id
-  int    stat;              //  status of cluster
-  int    element[_MAXLEN_]; // link to hit array
-  double elfract[_MAXLEN_]; // fraction of hit belonging to this cluster (important for overlapped clusters)
-} adcgam_t;
 
 void  read_profile_data();
 int   read_event(int *nw, int *ia, double *id);
@@ -86,7 +52,15 @@ static int debug_ncalls = 0;
 
 int main() {
 
-  read_profile_data();
+#if   CALOR_MATERIAL==LG_CALOR
+    char* profile_fname="prof_lg.dat";
+#elif CALOR_MATERIAL==PWO_CALOR
+    char* profile_fname="prof_pwo.dat";
+#else
+#error  Unknown calorimeter material
+#endif
+
+  read_profile_data(profile_fname);
 
   int nadcgam, ncl, nw;               // number of particles, clusters and hits
   int ia[_MADR_]; double id[_MADR_];  // arrays of adresses and energies
@@ -262,15 +236,14 @@ void  order_hits(int nw, int *ia, double *id) {
   return;
 }
 
-void  read_profile_data() {
+void  read_profile_data(const char* prof_file_name) {
   FILE *fp;
-#if   CALOR_MATERIAL==LG_CALOR
-  fp = fopen("prof_lg.dat","r");
-#elif CALOR_MATERIAL==PWO_CALOR
-  fp = fopen("prof_pwo.dat","r");
-#else
-#error  Unknown calorimeter material
-#endif
+    // R_OK - OK for reading
+    if( access( prof_file_name, R_OK ) == -1 ) {
+        fprintf(stderr, "(!)ERROR(!) profile file '%s' does not exists or access is denied");
+    }
+
+    fp = fopen(prof_file_name,"r");
   for(int i = 0; i<=_N_PROFILE_POINTS_; ++i)
     for(int j = 0; j <= i; ++j) {
       int i1, j1; double f1, f2;
