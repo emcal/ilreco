@@ -31,6 +31,18 @@ Special cmake flags:
 
 ...
 
+## Isle clustering algorithm
+
+Algorithm first finds islands as connected areas in separate HyCal2
+sectors.  Each island is subject to search for maxima.  
+In case of many maxima are found each of them will be associated with the separate hit.
+Each single hit is also subject to test if it could be split into two close hits (second step of separation). 
+Clusters found in all HyCal sectors are subject to merge in case if they pass the close-enough test. 
+The second step of separation was suppressed by high cut values because it can split single clusters 
+with probability of few percent and real hits will be close enough to be subject of this step only 
+in fraction of percent of all events.Thus the algorithm mostly seprates hits which produce different maxima.
+The minimum distance between them to be resolved 
+
 
 ## Support
 
