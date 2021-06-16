@@ -10,6 +10,42 @@
 #include "ilreco.h"
 
 
+/*
+class Reconstruction {
+  int   read_event(int *nw, int *ia, double *id);
+  int   cluster_search(int nw, int *ia, double *id, int *lencl);
+  
+  double amean[_N_PROFILE_POINTS_+1][_N_PROFILE_POINTS_+1], 
+  double ad2c[_N_PROFILE_POINTS_+1][_N_PROFILE_POINTS_+1];
+};
+*/
+/*
+C approach
+struct Reconstruction {  
+  double amean[_N_PROFILE_POINTS_+1][_N_PROFILE_POINTS_+1];
+  double ad2c[_N_PROFILE_POINTS_+1][_N_PROFILE_POINTS_+1];
+};
+
+int   reco_init(Reconstruction *r);
+int   reco_read_event(Reconstruction *r, int *nw, int *ia, double *id);
+int   reco_cluster_search(Reconstruction *r, int nw, int *ia, double *id, int *lencl);
+
+Reconstruction lg_reco;
+Reconstruction pwo_reco;
+
+reco_read_profile(&lg_reco, "lg.dat");
+reco_read_profile(&pwo_reco, "lg.dat");
+
+// interate over all crystal clusters
+reco_cluster_search(&pwo_reco, ....)
+reco_process_cluster(&pwo_reco, ....);
+
+// iterate for leadglass
+reco_cluster_search(&lg_reco, ....)
+reco_process_cluster(&lg_reco, ....);
+
+*/
+
 void  read_profile_data();
 int   read_event(int *nw, int *ia, double *id);
 int   cluster_search(int nw, int *ia, double *id, int *lencl);
