@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build -j
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: Benchmark (informational)
+        run: ./build/tests/ilreco_bench --reps 200 | tee benchmark.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark
+          path: benchmark.json
+
+  sanitizers:
+    # Informational for now: surfaces leaks/UB without gating merges.
+    # Local status at suite creation: CLEAN (see tests/KNOWN_ISSUES.md #10).
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure (ASan+UBSan)
+        run: >
+          cmake -B build-asan
+          -DCMAKE_C_FLAGS="-fsanitize=address,undefined -g -O1"
+          -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -g -O1"
+          -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+          -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined"
+      - name: Build
+        run: cmake --build build-asan -j
+      - name: Test under sanitizers
+        run: ctest --test-dir build-asan --output-on-failure
+
+  static-analysis:
+    # Informational: known findings are triaged in tests/KNOWN_ISSUES.md;
+    # this job exists to catch NEW ones, not to gate on old ones.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install analyzers
+        run: sudo apt-get update && sudo apt-get install -y cppcheck clang-tidy
+      - name: cppcheck
+        run: >
+          cppcheck --enable=warning,portability,performance
+          --inline-suppr --std=c11 --force
+          --template='{file}:{line}: {severity}: {id}: {message}'
+          src/ilreco/ 2> cppcheck.txt || true;
+          cat cppcheck.txt
+      - name: clang-tidy
+        run: >
+          clang-tidy src/ilreco/ilreco.c
+          --checks=clang-analyzer-*,bugprone-*
+          -- -I src/ilreco 2>&1 | tee clang-tidy.txt || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: static-analysis
+          path: |
+            cppcheck.txt
+            clang-tidy.txt

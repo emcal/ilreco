@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.0)
+cmake_minimum_required(VERSION 3.14)
 project('il_emcal_reconstruction')
 
 # Using flat installation (all files in the same directory)

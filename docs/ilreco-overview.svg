@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="420" viewBox="0 0 920 420" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#5a6570"/>
+    </marker>
+    <radialGradient id="shower1" cx="50%" cy="50%">
+      <stop offset="0%" stop-color="#0b4f8a"/><stop offset="45%" stop-color="#4393c9"/><stop offset="100%" stop-color="#d3e6f3"/>
+    </radialGradient>
+    <radialGradient id="shower2" cx="50%" cy="50%">
+      <stop offset="0%" stop-color="#a34a00"/><stop offset="45%" stop-color="#e08214"/><stop offset="100%" stop-color="#fbe3c5"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="920" height="420" fill="#ffffff"/>
+  <text x="460" y="30" text-anchor="middle" font-size="19" font-weight="bold" fill="#1f2a33">ilreco — island clustering for square-cell calorimeters</text>
+
+  <!-- ================= panel 1: hits ================= -->
+  <text x="150" y="62" text-anchor="middle" font-size="13" font-weight="bold" fill="#37424c">1 · fired cells (hits)</text>
+  <g transform="translate(40,75)">
+    <!-- grid -->
+    <g stroke="#ccd4da" stroke-width="1" fill="#f7f9fa">
+      <rect x="0" y="0" width="220" height="220"/>
+    </g>
+    <!-- shower 1 cells (blue) -->
+    <g stroke="#ffffff" stroke-width="1">
+      <rect x="60"  y="60"  width="20" height="20" fill="#cfe3f2"/>
+      <rect x="80"  y="40"  width="20" height="20" fill="#cfe3f2"/>
+      <rect x="80"  y="60"  width="20" height="20" fill="#6fa9d4"/>
+      <rect x="100" y="60"  width="20" height="20" fill="#0b4f8a"/>
+      <rect x="120" y="60"  width="20" height="20" fill="#6fa9d4"/>
+      <rect x="100" y="40"  width="20" height="20" fill="#6fa9d4"/>
+      <rect x="100" y="80"  width="20" height="20" fill="#9dc4e2"/>
+      <rect x="120" y="80"  width="20" height="20" fill="#cfe3f2"/>
+      <rect x="80"  y="80"  width="20" height="20" fill="#cfe3f2"/>
+      <rect x="120" y="40"  width="20" height="20" fill="#e2eef7"/>
+      <!-- shower 2 cells (orange), overlapping tail with shower 1 -->
+      <rect x="140" y="120" width="20" height="20" fill="#f2c188"/>
+      <rect x="160" y="120" width="20" height="20" fill="#a34a00"/>
+      <rect x="180" y="120" width="20" height="20" fill="#e08214"/>
+      <rect x="160" y="100" width="20" height="20" fill="#f2c188"/>
+      <rect x="160" y="140" width="20" height="20" fill="#e08214"/>
+      <rect x="180" y="140" width="20" height="20" fill="#f8ddba"/>
+      <rect x="140" y="140" width="20" height="20" fill="#f8ddba"/>
+      <rect x="180" y="100" width="20" height="20" fill="#f8ddba"/>
+    </g>
+    <!-- grid lines on top -->
+    <g stroke="#ccd4da" stroke-width="0.8" fill="none">
+      <path d="M0 20H220 M0 40H220 M0 60H220 M0 80H220 M0 100H220 M0 120H220 M0 140H220 M0 160H220 M0 180H220 M0 200H220"/>
+      <path d="M20 0V220 M40 0V220 M60 0V220 M80 0V220 M100 0V220 M120 0V220 M140 0V220 M160 0V220 M180 0V220 M200 0V220"/>
+    </g>
+    <rect x="0" y="0" width="220" height="220" fill="none" stroke="#8b98a3" stroke-width="1.5"/>
+    <text x="110" y="245" text-anchor="middle" font-size="11" fill="#5a6570">(col, row, E) per cell — any n×m grid</text>
+  </g>
+
+  <path d="M 285 185 H 320" stroke="#5a6570" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ================= panel 2: islands & peaks ================= -->
+  <text x="460" y="62" text-anchor="middle" font-size="13" font-weight="bold" fill="#37424c">2 · islands → peaks → shower fit</text>
+  <g transform="translate(350,75)">
+    <rect x="0" y="0" width="220" height="220" fill="#f7f9fa" stroke="#8b98a3" stroke-width="1.5"/>
+    <!-- island outline around both showers -->
+    <path d="M55 35 h95 v20 h20 v50 h35 v70 h-70 v-20 h-25 v-35 h-55 v-65 h0 z"
+          fill="none" stroke="#009E73" stroke-width="2.5" stroke-dasharray="6 3"/>
+    <text x="38" y="30" font-size="10" fill="#00795a" font-weight="bold">island (connected cells)</text>
+    <!-- peak markers -->
+    <circle cx="110" cy="70" r="7" fill="none" stroke="#0b4f8a" stroke-width="2.5"/>
+    <circle cx="170" cy="130" r="7" fill="none" stroke="#a34a00" stroke-width="2.5"/>
+    <text x="110" y="58" text-anchor="middle" font-size="10" fill="#0b4f8a" font-weight="bold">peak 1</text>
+    <text x="170" y="118" text-anchor="middle" font-size="10" fill="#a34a00" font-weight="bold">peak 2</text>
+    <!-- profile contours -->
+    <ellipse cx="110" cy="70" rx="34" ry="30" fill="none" stroke="#0b4f8a" stroke-width="1" opacity="0.5"/>
+    <ellipse cx="110" cy="70" rx="52" ry="47" fill="none" stroke="#0b4f8a" stroke-width="1" opacity="0.25"/>
+    <ellipse cx="170" cy="130" rx="30" ry="27" fill="none" stroke="#a34a00" stroke-width="1" opacity="0.5"/>
+    <ellipse cx="170" cy="130" rx="47" ry="43" fill="none" stroke="#a34a00" stroke-width="1" opacity="0.25"/>
+    <text x="110" y="245" text-anchor="middle" font-size="11" fill="#5a6570">energy sharing by measured shower profile,</text>
+    <text x="110" y="259" text-anchor="middle" font-size="11" fill="#5a6570">χ² position refinement, edge-aware correction</text>
+  </g>
+
+  <path d="M 595 185 H 630 " stroke="#5a6570" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ================= panel 3: clusters out ================= -->
+  <text x="765" y="62" text-anchor="middle" font-size="13" font-weight="bold" fill="#37424c">3 · reconstructed clusters</text>
+  <g transform="translate(660,75)">
+    <rect x="0" y="0" width="210" height="220" fill="#f7f9fa" stroke="#8b98a3" stroke-width="1.5"/>
+    <g font-size="12" fill="#1f2a33">
+      <circle cx="28" cy="42" r="9" fill="#0b4f8a"/>
+      <text x="48" y="38" font-weight="bold">cluster 1</text>
+      <text x="48" y="54" font-size="11" fill="#37424c">E = 2.31 GeV</text>
+      <text x="48" y="68" font-size="11" fill="#37424c">x = 4.87, y = 3.02 cells · χ² = 1.3</text>
+      <circle cx="28" cy="106" r="9" fill="#e08214"/>
+      <text x="48" y="102" font-weight="bold">cluster 2</text>
+      <text x="48" y="118" font-size="11" fill="#37424c">E = 1.12 GeV</text>
+      <text x="48" y="132" font-size="11" fill="#37424c">x = 8.11, y = 6.05 cells · χ² = 1.8</text>
+    </g>
+    <line x1="14" y1="152" x2="196" y2="152" stroke="#ccd4da"/>
+    <text x="105" y="176" text-anchor="middle" font-size="11" fill="#5a6570">overlapping showers separated,</text>
+    <text x="105" y="190" text-anchor="middle" font-size="11" fill="#5a6570">energies containment-corrected,</text>
+    <text x="105" y="204" text-anchor="middle" font-size="11" fill="#5a6570">positions to ~mm precision</text>
+  </g>
+
+  <!-- ================= architecture strip ================= -->
+  <g transform="translate(40,340)">
+    <rect x="0" y="0" width="840" height="58" rx="8" fill="#f0f4f7" stroke="#ccd4da"/>
+    <g font-size="12" fill="#1f2a33">
+      <rect x="18" y="14" width="180" height="30" rx="5" fill="#dfeaf3" stroke="#6fa9d4"/>
+      <text x="108" y="33" text-anchor="middle" font-weight="bold" fill="#0b4f8a">config (create once)</text>
+      <text x="108" y="52" text-anchor="middle" font-size="9" fill="#5a6570">geometry · profile tables · immutable</text>
+      <g stroke="#5a6570" stroke-width="1.5">
+        <path d="M 205 29 H 250" marker-end="url(#arrow)"/>
+      </g>
+      <g>
+        <rect x="258" y="6"  width="150" height="21" rx="4" fill="#ffffff" stroke="#8b98a3"/>
+        <rect x="258" y="31" width="150" height="21" rx="4" fill="#ffffff" stroke="#8b98a3"/>
+        <text x="333" y="21" text-anchor="middle" font-size="10">thread 1 · workspace 1</text>
+        <text x="333" y="46" text-anchor="middle" font-size="10">thread N · workspace N</text>
+      </g>
+      <g stroke="#5a6570" stroke-width="1.5">
+        <path d="M 415 17 H 455" marker-end="url(#arrow)"/>
+        <path d="M 415 41 H 455" marker-end="url(#arrow)"/>
+      </g>
+      <text x="475" y="24" font-size="11" fill="#37424c">events reconstructed in parallel,</text>
+      <text x="475" y="40" font-size="11" fill="#37424c">zero allocations per event</text>
+      <text x="700" y="24" font-size="11" fill="#37424c" font-weight="bold">C11 · no dependencies</text>
+      <text x="700" y="40" font-size="11" fill="#37424c">golden-tested bit-for-bit</text>
+    </g>
+  </g>
+</svg>

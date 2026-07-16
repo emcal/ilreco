@@ -1,0 +1,7 @@
+{
+  "reps": 2000,
+  "grid": "34x34",
+  "single": {"us_per_event": 40.844, "events_per_sec": 24484, "mean_hits": 25.0},
+  "pair": {"us_per_event": 125.372, "events_per_sec": 7976, "mean_hits": 50.0},
+  "dense": {"us_per_event": 4005.876, "events_per_sec": 250, "mean_hits": 425.4}
+}

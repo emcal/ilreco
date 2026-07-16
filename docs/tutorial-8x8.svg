@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="560" viewBox="0 0 960 560" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <pattern id="hatch" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+      <rect width="8" height="8" fill="#3a4046"/>
+      <line x1="0" y1="0" x2="0" y2="8" stroke="#6b7684" stroke-width="3"/>
+    </pattern>
+    <marker id="tarrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#5a6570"/>
+    </marker>
+  </defs>
+
+  <rect width="960" height="560" fill="#ffffff"/>
+  <text x="480" y="28" text-anchor="middle" font-size="17" font-weight="bold" fill="#1f2a33">Tutorial event: 8×8 calorimeter, central 2×2 beam hole, three photons</text>
+
+  <!-- ============ grid: cell 40px, x=col*40, y=(7-row)*40, 0-based ============ -->
+  <g transform="translate(70,64)">
+    <!-- outer edge ring -->
+    <g stroke="#ffffff" stroke-width="1.5">
+      <rect x="0" y="0" width="40" height="40" fill="#eef2f5"/><rect x="40" y="0" width="40" height="40" fill="#eef2f5"/><rect x="80" y="0" width="40" height="40" fill="#eef2f5"/><rect x="120" y="0" width="40" height="40" fill="#eef2f5"/><rect x="160" y="0" width="40" height="40" fill="#eef2f5"/><rect x="200" y="0" width="40" height="40" fill="#eef2f5"/><rect x="240" y="0" width="40" height="40" fill="#eef2f5"/><rect x="280" y="0" width="40" height="40" fill="#eef2f5"/>
+      <rect x="0" y="280" width="40" height="40" fill="#eef2f5"/><rect x="40" y="280" width="40" height="40" fill="#eef2f5"/><rect x="80" y="280" width="40" height="40" fill="#eef2f5"/><rect x="120" y="280" width="40" height="40" fill="#eef2f5"/><rect x="160" y="280" width="40" height="40" fill="#eef2f5"/><rect x="200" y="280" width="40" height="40" fill="#eef2f5"/><rect x="240" y="280" width="40" height="40" fill="#eef2f5"/><rect x="280" y="280" width="40" height="40" fill="#eef2f5"/>
+      <rect x="0" y="40" width="40" height="40" fill="#eef2f5"/><rect x="0" y="80" width="40" height="40" fill="#eef2f5"/><rect x="0" y="120" width="40" height="40" fill="#eef2f5"/><rect x="0" y="160" width="40" height="40" fill="#eef2f5"/><rect x="0" y="200" width="40" height="40" fill="#eef2f5"/><rect x="0" y="240" width="40" height="40" fill="#eef2f5"/>
+      <rect x="280" y="40" width="40" height="40" fill="#eef2f5"/><rect x="280" y="80" width="40" height="40" fill="#eef2f5"/><rect x="280" y="120" width="40" height="40" fill="#eef2f5"/><rect x="280" y="160" width="40" height="40" fill="#eef2f5"/><rect x="280" y="200" width="40" height="40" fill="#eef2f5"/><rect x="280" y="240" width="40" height="40" fill="#eef2f5"/>
+      <!-- hole-border ring (type 1 if seeded): cols 2,5 rows 2..5; rows 2,5 cols 2..5 -->
+      <rect x="80" y="80" width="40" height="40" fill="#fdf1dd"/><rect x="120" y="80" width="40" height="40" fill="#fdf1dd"/><rect x="160" y="80" width="40" height="40" fill="#fdf1dd"/><rect x="200" y="80" width="40" height="40" fill="#fdf1dd"/>
+      <rect x="80" y="120" width="40" height="40" fill="#fdf1dd"/><rect x="200" y="120" width="40" height="40" fill="#fdf1dd"/>
+      <rect x="80" y="160" width="40" height="40" fill="#fdf1dd"/><rect x="200" y="160" width="40" height="40" fill="#fdf1dd"/>
+      <rect x="80" y="200" width="40" height="40" fill="#fdf1dd"/><rect x="120" y="200" width="40" height="40" fill="#fdf1dd"/><rect x="160" y="200" width="40" height="40" fill="#fdf1dd"/><rect x="200" y="200" width="40" height="40" fill="#fdf1dd"/>
+      <!-- photon A (blue), seed on hole border (5,4) -->
+      <rect x="200" y="120" width="40" height="40" fill="#0b4f8a"/>
+      <rect x="240" y="120" width="40" height="40" fill="#9ec5e3"/>
+      <rect x="200" y="80"  width="40" height="40" fill="#a5c9e4"/>
+      <rect x="200" y="160" width="40" height="40" fill="#b3d1e8"/>
+      <rect x="240" y="80"  width="40" height="40" fill="#dceaf4"/>
+      <rect x="240" y="160" width="40" height="40" fill="#e0ecf5"/>
+      <!-- photon B (green), normal interior seed (2,1) -->
+      <rect x="80"  y="240" width="40" height="40" fill="#00795a"/>
+      <rect x="40"  y="240" width="40" height="40" fill="#7fc6b1"/>
+      <rect x="120" y="240" width="40" height="40" fill="#8fcdbb"/>
+      <rect x="80"  y="200" width="40" height="40" fill="#9ad2c2"/>
+      <rect x="80"  y="280" width="40" height="40" fill="#b8e0d3"/>
+      <!-- photon C (vermilion), outer-edge seed (0,6) -->
+      <rect x="0"  y="40" width="40" height="40" fill="#b34500"/>
+      <rect x="40" y="40" width="40" height="40" fill="#f2c188"/>
+      <rect x="0"  y="80" width="40" height="40" fill="#f4c997"/>
+      <rect x="40" y="0"  width="40" height="40" fill="#f9e5cc"/>
+      <!-- 2x2 HOLE: (3,3),(4,3),(3,4),(4,4) -->
+      <rect x="120" y="120" width="40" height="40" fill="url(#hatch)"/>
+      <rect x="160" y="120" width="40" height="40" fill="url(#hatch)"/>
+      <rect x="120" y="160" width="40" height="40" fill="url(#hatch)"/>
+      <rect x="160" y="160" width="40" height="40" fill="url(#hatch)"/>
+    </g>
+    <!-- energies -->
+    <g font-size="10" text-anchor="middle" fill="#1f2a33">
+      <text x="220" y="142" fill="#ffffff" font-weight="bold">0.950</text>
+      <text x="220" y="153" fill="#cfe3f2" font-size="7">SEED A</text>
+      <text x="260" y="144">0.140</text>
+      <text x="220" y="104">0.130</text>
+      <text x="220" y="184">0.110</text>
+      <text x="260" y="104">0.040</text>
+      <text x="260" y="184">0.035</text>
+      <text x="100" y="262" fill="#ffffff" font-weight="bold">0.780</text>
+      <text x="100" y="273" fill="#c9e8dd" font-size="7">SEED B</text>
+      <text x="60"  y="264">0.120</text>
+      <text x="140" y="264">0.100</text>
+      <text x="100" y="224">0.090</text>
+      <text x="100" y="304">0.070</text>
+      <text x="20" y="62" fill="#ffffff" font-weight="bold">0.520</text>
+      <text x="20" y="73" fill="#fbe3c5" font-size="7">SEED C</text>
+      <text x="60" y="64">0.080</text>
+      <text x="20" y="104">0.070</text>
+      <text x="60" y="24">0.030</text>
+      <text x="160" y="144" fill="#ffffff" font-size="9" font-weight="bold">HOLE 2×2</text>
+      <text x="160" y="156" fill="#c9d2da" font-size="7">never fed</text>
+    </g>
+    <!-- grid frame -->
+    <g stroke="#8b98a3" stroke-width="0.8" fill="none">
+      <rect x="0" y="0" width="320" height="320" stroke-width="2"/>
+      <path d="M40 0V320 M80 0V320 M120 0V320 M160 0V320 M200 0V320 M240 0V320 M280 0V320 M0 40H320 M0 80H320 M0 120H320 M0 160H320 M0 200H320 M0 240H320 M0 280H320"/>
+    </g>
+    <!-- axes -->
+    <g font-size="10.5" fill="#5a6570" text-anchor="middle">
+      <text x="20" y="335">0</text><text x="60" y="335">1</text><text x="100" y="335">2</text><text x="140" y="335">3</text><text x="180" y="335">4</text><text x="220" y="335">5</text><text x="260" y="335">6</text><text x="300" y="335">7</text>
+      <text x="160" y="352" font-weight="bold">col →</text>
+      <text x="-12" y="304">0</text><text x="-12" y="264">1</text><text x="-12" y="224">2</text><text x="-12" y="184">3</text><text x="-12" y="144">4</text><text x="-12" y="104">5</text><text x="-12" y="64">6</text><text x="-12" y="24">7</text>
+      <text x="-34" y="163" font-weight="bold" transform="rotate(-90 -34 163)">row →</text>
+    </g>
+    <!-- legend -->
+    <g font-size="10.5" fill="#37424c">
+      <rect x="0" y="368" width="12" height="12" fill="#ffffff" stroke="#8b98a3"/>
+      <text x="18" y="378">normal (type 0 if seeded)</text>
+      <rect x="165" y="368" width="12" height="12" fill="#eef2f5" stroke="#8b98a3"/>
+      <text x="183" y="378">outer edge (type 2 if seeded)</text>
+      <rect x="0" y="388" width="12" height="12" fill="#fdf1dd" stroke="#8b98a3"/>
+      <text x="18" y="398">hole border (type 1 if seeded)</text>
+      <rect x="165" y="388" width="12" height="12" fill="url(#hatch)"/>
+      <text x="183" y="398">hole: in config, never fed</text>
+    </g>
+  </g>
+
+  <path d="M 440 225 H 477 " stroke="#5a6570" stroke-width="2" marker-end="url(#tarrow)"/>
+
+  <!-- ============ input + outputs ============ -->
+  <g transform="translate(495,64)">
+    <text x="0" y="0" font-size="13" font-weight="bold" fill="#37424c">input array, raw DAQ order — no sorting, no seed marking:</text>
+    <g font-family="monospace" font-size="12.5" fill="#1f2a33">
+      <text x="0" y="24">ilreco_hit hits[15] = {</text>
+      <text x="16" y="42">{1,1,0.120}, {5,4,0.950}, {0,6,0.520},</text>
+      <text x="16" y="60">{2,2,0.090}, {6,4,0.140}, {2,1,0.780},</text>
+      <text x="16" y="78">{0,5,0.070}, {5,5,0.130}, {3,1,0.100},</text>
+      <text x="16" y="96">{1,6,0.080}, {5,3,0.110}, {2,0,0.070},</text>
+      <text x="16" y="114">{6,5,0.040}, {1,7,0.030}, {6,3,0.035},</text>
+      <text x="0" y="132">};  <tspan fill="#a34a00">/* hole (3,3)(4,3)(3,4)(4,4): no entries */</tspan></text>
+      <text x="0" y="154">int n = ilreco_reconstruct(cfg, ws, hits, 15,</text>
+      <text x="0" y="170">                           out, 8);</text>
+    </g>
+    <g font-size="12" fill="#37424c">
+      <text x="0" y="202" font-weight="bold">output: n = 3 clusters, energy-descending — one of each type:</text>
+      <g font-family="monospace" font-size="12">
+        <circle cx="8" cy="222" r="6" fill="#0b4f8a"/>
+        <text x="22" y="226">out[0]: E=1.4239  x=5.278 y=4.047</text>
+        <text x="22" y="242">        chi2=1.38 size=6  type=1 (hole border)</text>
+        <circle cx="8" cy="264" r="6" fill="#00795a"/>
+        <text x="22" y="268">out[1]: E=1.1789  x=1.949 y=1.051</text>
+        <text x="22" y="284">        chi2=1.79 size=5  type=0 (normal)</text>
+        <circle cx="8" cy="306" r="6" fill="#b34500"/>
+        <text x="22" y="310">out[2]: E=0.7450  x=0.325 y=5.815</text>
+        <text x="22" y="326">        chi2=0.79 size=4  type=2 (outer edge)</text>
+      </g>
+      <text x="0" y="354">A: seeded on the hole border → type 1, labeled</text>
+      <text x="0" y="370">automatically; position pushed away from the hole.</text>
+      <text x="0" y="386">B: normal interior shower → type 0.</text>
+      <text x="0" y="402">C: edge shower → type 2; strongest containment</text>
+      <text x="0" y="418">correction (0.745 vs Σ 0.700 = +6%).</text>
+    </g>
+  </g>
+</svg>
