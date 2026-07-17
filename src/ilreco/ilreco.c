@@ -1,56 +1,104 @@
 //
-//  ilreco — island clustering for square-cell calorimeters.
+//  ilreco — island-clustering reconstruction for square-cell calorimeters.
+//  Public interface and its documentation: ilreco.h.
 //
-//  2026 modernization: all mutable state moved into explicit contexts
-//  (ilreco_config: immutable shared geometry/profile/tunables, allocated once;
-//  ilreco_workspace: per-thread buffers, allocated once). The reconstruction
-//  algorithm itself is UNCHANGED — every expression and its evaluation order
-//  is preserved from the original (validated bit-for-bit by the golden test
-//  tables in tests/data). The legacy 1-based macro-configured API is kept as
-//  a thin shim over an internal default context.
+//  File layout:
+//    1. contexts: ilreco_config (shared, immutable) / ilreco_workspace
+//       (per-thread buffers) and their create/destroy/reconstruct entry points
+//    2. the reconstruction algorithm
 //
-//  gcc ilreco.c -O3 -Wall -std=c11 -lm
+//  The algorithm section is intentionally identical, expression for
+//  expression, to the original PrimEx/HyCal code: evaluation order and the
+//  integer quantization steps are part of the contract, and the results are
+//  pinned bit-exact by the golden tables in tests/data. Do not "clean up"
+//  arithmetic there without re-baselining those tables.
 //
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
-#include <unistd.h>
 #include "ilreco.h"
+
+/* ===================== internal constants ================================= */
+
+#define _MCL_       200       /* cluster-length array capacity                */
+#define _MADCGAM_   200       /* output-object array capacity                 */
+#define _MAXLEN_    100       /* max hits stored per reconstructed object     */
+#define _MPK_        12       /* max peaks per raw cluster                    */
+#define _N_REC_METHODS_ 5     /* coordinate-reconstruction method slots       */
+#define _ZCAL_      732.      /* default target-to-calorimeter distance [cm]  */
+#define NPROF       500       /* profile table nodes per axis (0..NPROF)      */
+
+#define PWO_CALOR 1
+#define LG_CALOR  2
+#ifndef CALOR_MATERIAL
+#define CALOR_MATERIAL PWO_CALOR  /* selects the seed-threshold energy scaling */
+#endif
+
+/* internal representation of one reconstructed object */
+typedef struct {
+    double  e;                 /* energy [GeV], containment-corrected          */
+    double  x[_N_REC_METHODS_];/* position per method; x[1] = standard, in
+                                  1-based column units                         */
+    double  y[_N_REC_METHODS_];/* same, row units                              */
+    double  z[_N_REC_METHODS_];
+    double  chi2;              /* profile-fit chi2 / ndof                      */
+    int32_t size;              /* number of hits                               */
+    int32_t type;              /* fiducial-region classification (+10 if split)*/
+    int32_t id;                /* reconstruction-path tag                      */
+    int32_t stat;              /* status of cluster                            */
+    int32_t element[_MAXLEN_]; /* hit addresses (packed; slots 1..)            */
+    double  elfract[_MAXLEN_]; /* hit weights — units differ by path, see
+                                  tests/KNOWN_ISSUES.md                        */
+} adcgam_t;
 
 /* ============================ contexts ==================================== */
 
-#define NPROF _N_PROFILE_POINTS_
-
 struct ilreco_config {
-    int ncol, nrow;        /* grid size (columns x rows)                      */
-    int offset;            /* column stride in packed 1-based addresses       */
-    int madr;              /* hit/address buffer capacity                     */
-    int madr0;             /* nominal module count (peak-count guard)         */
-    int mcl;               /* max raw clusters + 1                            */
-    int madcgam;           /* max reconstructed objects + 1                   */
-    double zcal;           /* target distance (two-gamma mass separation cut) */
-    double min_seed_gev;   /* cluster seed threshold (historical 0.01)        */
-    double seed_scale;     /* seed-threshold energy scaling (_IBVAL_)         */
-    int hole_enabled;      /* classify central 2x2 beam-hole cells (HyCal)    */
-    unsigned char *cellmask; /* NULL = all cells exist; else [nrow*ncol], 0=missing */
-    double *amean;         /* (NPROF+1)^2 shower profile mean                 */
-    double *ad2c;          /* (NPROF+1)^2 shower profile second moment        */
+    int32_t ncol;          /* grid columns                                    */
+    int32_t nrow;          /* grid rows                                       */
+    int32_t offset;        /* packed 1-based cell address = col*offset + row;
+                              offset > nrow+1 so addresses never collide      */
+    int32_t madr;          /* capacity of the per-event hit/address buffers   */
+    int32_t madr0;         /* peak-count budget: a cluster of nadc hits may
+                              have at most madr0/nadc - 3 peaks, bounding the
+                              peaks x cluster-length work per cluster         */
+    int32_t mcl;           /* cluster-length array capacity: at most mcl-1
+                              raw clusters per event                          */
+    int32_t madcgam;       /* output-object array capacity: at most madcgam-2
+                              reconstructed objects per event                 */
+    double zcal;           /* target-to-calorimeter distance [cm] (two-gamma
+                              invariant-mass separation cut)                  */
+    double min_seed_gev;   /* cluster seed threshold [GeV] (historical 0.01)  */
+    double seed_scale;     /* seed-threshold energy scaling factor            */
+    int32_t hole_enabled;  /* label seeds around a central 2x2 beam hole
+                              as type 1 (classic layout)                       */
+    unsigned char *cellmask; /* NULL = all cells exist; else [nrow*ncol]
+                                row-major, 0 = cell physically missing        */
+    double *amean;         /* (NPROF+1)^2 shower-profile mean energy fraction */
+    double *ad2c;          /* (NPROF+1)^2 shower-profile fraction variance    */
 };
 
 struct ilreco_workspace {
-    int stride;            /* == cfg->madr at creation                        */
-    int mcl, madcgam;
-    /* event buffers (new API entry) */
-    int *ia; double *id; int *lencl; adcgam_t *adcgam;
+    int32_t stride;        /* row length of iwrk/idp/fwrk; == cfg->madr       */
+    int32_t mcl;           /* copies of the config capacities, for checking   */
+    int32_t madcgam;       /*   that workspace and config match               */
+    /* per-event buffers (filled by ilreco_reconstruct) */
+    int32_t *ia;           /* [madr]  packed cell addresses, used from 1      */
+    double  *id;           /* [madr]  cell energies [GeV], parallel to ia     */
+    int32_t *lencl;        /* [mcl]   raw-cluster lengths                     */
+    adcgam_t *adcgam;      /* [madcgam] reconstructed objects                 */
+    int32_t *order;        /* [madcgam] energy-descending sort scratch        */
     /* cluster_search scratch */
-    int *iwork; double *dwork;
+    int32_t *iwork;        /* [madr]  subcluster-glue address shuffle         */
+    double  *dwork;        /* [madr]  subcluster-glue energy shuffle          */
     /* process_cluster / gamma_cluster scratch */
-    int *iazero;           /* 8*stride + 2                                    */
-    int *iwrk, *idp;       /* (_MPK_+1) * stride each                         */
-    double *fwrk;          /* (_MPK_+1) * stride                              */
-    void *arena;           /* single allocation backing all of the above      */
+    int32_t *iazero;       /* [8*madr+2] zero-signal neighbor addresses       */
+    int32_t *iwrk;         /* [(_MPK_+1) x stride] per-peak integer weights   */
+    int32_t *idp;          /* [(_MPK_+1) x stride] per-peak deposit shares    */
+    double  *fwrk;         /* [(_MPK_+1) x stride] per-peak float weights     */
+    void *arena;           /* single allocation backing all of the above     */
 };
 
 #define AMEAN(cf, i, j) ((cf)->amean[(size_t)(i) * (NPROF + 1) + (j)])
@@ -59,54 +107,100 @@ struct ilreco_workspace {
 #define IDP(wk, p, i)   ((wk)->idp [(size_t)(p) * (wk)->stride + (i)])
 #define FWRK(wk, p, i)  ((wk)->fwrk[(size_t)(p) * (wk)->stride + (i)])
 
-/* ===================== internal declarations ============================== */
+/* ===================== internal declarations ==============================
+ *
+ * Common parameters of the algorithm functions (original conventions, arrays
+ * used from index 1):
+ *   ia[]      packed 1-based cell addresses: ia[i] = col*cf->offset + row
+ *   id[]      cell energies [GeV], parallel to ia[]
+ *   nw/nadc   number of valid entries in ia[]/id[] (indices 1..nw)
+ *   lencl[]   hit count of each raw cluster (lencl[1..ncl])
+ *   iazero[]  addresses of existing zero-signal cells neighboring the
+ *             cluster, nzero entries — they enter the containment correction
+ *             and the chi2 as real zero measurements
+ *   ipnpk[]   ia-indices of the peak (local-maximum) cells, 1..npk
+ *   adcgam[]/nadcgam  output objects and their running count
+ */
 
-static int  cluster_search_core(const ilreco_config *cf, ilreco_workspace *wk,
-                                int nw, int *ia, double *id, int *lencl);
+/* stage 1: group hits into connected clusters; reorders ia/id in place
+ * (address-ascending, clusters contiguous); returns the cluster count */
+static int32_t cluster_search_core(const ilreco_config *cf, ilreco_workspace *wk,
+                                   int32_t nw, int32_t *ia, double *id,
+                                   int32_t *lencl);
+
+/* stage 2: split one raw cluster into reconstructed objects (peak finding,
+ * then iterative profile-based energy sharing between the peaks) */
 static void process_cluster_core(const ilreco_config *cf, ilreco_workspace *wk,
-                                 int nadc, int *ia, double *id,
-                                 int *nadcgam, adcgam_t *adcgam);
-static void order_hits(int nw, int *ia, double *id);
-static int  peak_type(const ilreco_config *cf, int ix, int iy);
-int   nint(double x);
+                                 int32_t nadc, int32_t *ia, double *id,
+                                 int32_t *nadcgam, adcgam_t *adcgam);
+
+/* insertion sort of ia (ascending) with id following */
+static void order_hits(int32_t nw, int32_t *ia, double *id);
+
+/* fiducial classification of a seed cell (1-based col ix, row iy):
+ * 0 = interior, 1 = beam-hole border, 2 = outer boundary */
+static int32_t peak_type(const ilreco_config *cf, int32_t ix, int32_t iy);
+
+/* round to nearest integer, halves away from zero */
+static int32_t nint(double x);
+
+/* fit one cluster: energy/position via profile moments + chi2 descent.
+ * In:  itype from peak_type; nadc/ia/id = the cluster's cells.
+ * Out: e1/x1/y1 = the gamma (positions in 1-based cell units);
+ *      chisq in = reference chi2 to beat, out = final chi2/ndof;
+ *      e2/x2/y2 = second gamma if a physical two-gamma split was found,
+ *      e2 = 0 otherwise. */
 static void gamma_cluster(const ilreco_config *cf, ilreco_workspace *wk,
-                          int itype, int nadc, int *ia, double *id,
+                          int32_t itype, int32_t nadc, int32_t *ia, double *id,
                           double *chisq, double *e1, double *x1, double *y1,
                           double *e2, double *x2, double *y2);
-static void fill_zero_hits(const ilreco_config *cf, int nadc, int *ia,
-                           int *nzero, int *iazero);
-static void mom1_cluster(const ilreco_config *cf, int nadc, int *ia, double *id,
-                         int nzero, int *iazero, double *e, double *x, double *y);
-static void mom2_cluster(const ilreco_config *cf, int nadc, int *ia, double *id,
-                         int nzero, int *iazero, double *e, double *x, double *y,
+
+/* collect existing zero-signal neighbors of the cluster into iazero[] */
+static void fill_zero_hits(const ilreco_config *cf, int32_t nadc, int32_t *ia,
+                           int32_t *nzero, int32_t *iazero);
+
+/* first moments: energy-weighted position + containment-corrected energy */
+static void mom1_cluster(const ilreco_config *cf, int32_t nadc, int32_t *ia,
+                         double *id, int32_t nzero, int32_t *iazero,
+                         double *e, double *x, double *y);
+
+/* first + second moments (only used by the dead two-gamma stub below) */
+static void mom2_cluster(const ilreco_config *cf, int32_t nadc, int32_t *ia,
+                         double *id, int32_t nzero, int32_t *iazero,
+                         double *e, double *x, double *y,
                          double *xx, double *yy, double *xy);
-static double chisq1_cluser(const ilreco_config *cf, int nadc, int *ia, double *id,
-                            int nzero, int *iazero, double e, double x, double y);
-static void tgamma_cluster(const ilreco_config *cf, int nadc, int *ia, double *id,
-                           int nzero, int *iazero, double *chisq,
-                           double *ee, double *xx, double *yy,
+
+/* chi2 of the (e, x, y) single-shower hypothesis against the profile */
+static double chisq1_cluser(const ilreco_config *cf, int32_t nadc, int32_t *ia,
+                            double *id, int32_t nzero, int32_t *iazero,
+                            double e, double x, double y);
+
+/* second-order two-gamma separation — intentionally an empty stub, see its
+ * definition */
+static void tgamma_cluster(const ilreco_config *cf, int32_t nadc, int32_t *ia,
+                           double *id, int32_t nzero, int32_t *iazero,
+                           double *chisq, double *ee, double *xx, double *yy,
                            double *e2, double *x2, double *y2);
+
+/* bilinear interpolation of the profile tables at cell-unit offset (x, y) */
 static double profile_mean(const ilreco_config *cf, double x, double y);
-static double sigma2(const ilreco_config *cf, double dx, double dy, double e);
 static double d2c(const ilreco_config *cf, double x, double y);
+
+/* expected variance of the measured energy fraction at offset (dx, dy) */
+static double sigma2(const ilreco_config *cf, double dx, double dy, double e);
+
+/* emit the reconstructed object(s) for a single-peak / multi-peak cluster */
 static void add_single_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
-                              int nadc, int *ia, double *id, int *ipnpk,
-                              int *nadcgam, adcgam_t *adcgam);
+                              int32_t nadc, int32_t *ia, double *id,
+                              int32_t *ipnpk, int32_t *nadcgam, adcgam_t *adcgam);
 static void add_many_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
-                            int nadc, int *ia, double *id, int npk, int *ipnpk,
-                            int *nadcgam, adcgam_t *adcgam);
-
-/* random generator functions for the built-in test event generator */
-double  ZBQLINI(int seed, double ZBQLIX[43+1]);
-double  ZBQLUAB(double x1, double x2);
-double  ZBQLU01();
-
-static int debug_ncalls = 0;
+                            int32_t nadc, int32_t *ia, double *id, int32_t npk,
+                            int32_t *ipnpk, int32_t *nadcgam, adcgam_t *adcgam);
 
 /* ====================== config / workspace =============================== */
 
-static int load_profile(ilreco_config *cf, const char *path,
-                        char *errbuf, size_t errlen) {
+static int32_t load_profile(ilreco_config *cf, const char *path,
+                            char *errbuf, size_t errlen) {
     FILE *fp = fopen(path, "r");
     if (!fp) {
         if (errbuf) snprintf(errbuf, errlen,
@@ -133,21 +227,24 @@ static int load_profile(ilreco_config *cf, const char *path,
     return 0;
 }
 
-static ilreco_config *config_create_internal(int n_cols, int n_rows, int offset,
-                                             int madr, int madr0, const char *profile_path,
-                                             char *errbuf, size_t errlen) {
-    if (n_cols < 1 || n_rows < 1 || offset <= n_rows + 1) {
-        if (errbuf) snprintf(errbuf, errlen, "invalid geometry %dx%d (offset %d)",
-                             n_cols, n_rows, offset);
+ilreco_config *ilreco_config_create(int32_t n_cols, int32_t n_rows,
+                                    const char *profile_path,
+                                    char *errbuf, size_t errbuf_len) {
+    if (n_cols < 1 || n_rows < 1) {
+        if (errbuf) snprintf(errbuf, errbuf_len, "invalid geometry %dx%d",
+                             n_cols, n_rows);
         return NULL;
     }
     ilreco_config *cf = calloc(1, sizeof *cf);
     if (!cf) return NULL;
     cf->ncol = n_cols;
     cf->nrow = n_rows;
-    cf->offset = offset;
-    cf->madr = madr;
-    cf->madr0 = madr0;
+    cf->offset = n_rows + 2;
+    cf->madr = (n_cols + 1) * cf->offset + n_rows + 2 + 64;
+    /* peak budget scaled far above physical occupancies: the guard only ever
+     * binds for pathological events with >= _MPK_-2 peaks in a huge island */
+    const int64_t budget = 100LL * n_cols * n_rows;
+    cf->madr0 = budget < INT32_MAX ? (int32_t)budget : INT32_MAX;
     cf->mcl = _MCL_;
     cf->madcgam = _MADCGAM_;
     cf->zcal = _ZCAL_;
@@ -164,20 +261,16 @@ static ilreco_config *config_create_internal(int n_cols, int n_rows, int offset,
         ilreco_config_destroy(cf);
         return NULL;
     }
-    if (profile_path && load_profile(cf, profile_path, errbuf, errlen) != 0) {
+    if (!profile_path) {
+        if (errbuf) snprintf(errbuf, errbuf_len, "no shower-profile file given");
+        ilreco_config_destroy(cf);
+        return NULL;
+    }
+    if (load_profile(cf, profile_path, errbuf, errbuf_len) != 0) {
         ilreco_config_destroy(cf);
         return NULL;
     }
     return cf;
-}
-
-ilreco_config *ilreco_config_create(int n_cols, int n_rows,
-                                    const char *profile_path,
-                                    char *errbuf, size_t errbuf_len) {
-    const int offset = n_rows + 2;
-    const int madr = (n_cols + 1) * offset + n_rows + 2 + 64;
-    return config_create_internal(n_cols, n_rows, offset, madr, madr - 64,
-                                  profile_path, errbuf, errbuf_len);
 }
 
 void ilreco_config_destroy(ilreco_config *cfg) {
@@ -189,12 +282,12 @@ void ilreco_config_destroy(ilreco_config *cfg) {
 }
 
 /* 1-based column/row -> does the cell exist? (mask absent => yes) */
-static int cell_exists(const ilreco_config *cf, int ix, int iy) {
+static int32_t cell_exists(const ilreco_config *cf, int32_t ix, int32_t iy) {
     if (!cf->cellmask) return 1;
     return cf->cellmask[(size_t)(iy - 1) * cf->ncol + (ix - 1)] != 0;
 }
 
-int ilreco_config_set_cell_mask(ilreco_config *cfg, const unsigned char *mask) {
+int32_t ilreco_config_set_cell_mask(ilreco_config *cfg, const unsigned char *mask) {
     if (!cfg || !mask) return -1;
     if (!cfg->cellmask) {
         cfg->cellmask = malloc((size_t)cfg->ncol * cfg->nrow);
@@ -208,7 +301,7 @@ void ilreco_config_set_zcal(ilreco_config *cfg, double zcal) { cfg->zcal = zcal;
 void ilreco_config_set_seed_threshold(ilreco_config *cfg, double min_seed_gev) {
     cfg->min_seed_gev = min_seed_gev;
 }
-void ilreco_config_set_hole_classification(ilreco_config *cfg, int enabled) {
+void ilreco_config_set_hole_classification(ilreco_config *cfg, int32_t enabled) {
     cfg->hole_enabled = enabled;
 }
 
@@ -223,9 +316,10 @@ ilreco_workspace *ilreco_workspace_create(const ilreco_config *cfg) {
     const size_t n_int = m /*ia*/ + m /*iwork*/ + (size_t)cfg->mcl /*lencl*/
                        + (8 * m + 2) /*iazero*/
                        + (size_t)(_MPK_ + 1) * m /*iwrk*/
-                       + (size_t)(_MPK_ + 1) * m /*idp*/;
+                       + (size_t)(_MPK_ + 1) * m /*idp*/
+                       + (size_t)cfg->madcgam /*order*/;
     const size_t n_dbl = m /*id*/ + m /*dwork*/ + (size_t)(_MPK_ + 1) * m /*fwrk*/;
-    const size_t bytes = n_dbl * sizeof(double) + n_int * sizeof(int)
+    const size_t bytes = n_dbl * sizeof(double) + n_int * sizeof(int32_t)
                        + (size_t)cfg->madcgam * sizeof(adcgam_t);
     char *p = malloc(bytes);
     if (!p) { free(wk); return NULL; }
@@ -235,12 +329,13 @@ ilreco_workspace *ilreco_workspace_create(const ilreco_config *cfg) {
     wk->dwork = (double *)p;              p += m * sizeof(double);
     wk->fwrk = (double *)p;               p += (size_t)(_MPK_ + 1) * m * sizeof(double);
     wk->adcgam = (adcgam_t *)p;           p += (size_t)cfg->madcgam * sizeof(adcgam_t);
-    wk->ia = (int *)p;                    p += m * sizeof(int);
-    wk->iwork = (int *)p;                 p += m * sizeof(int);
-    wk->lencl = (int *)p;                 p += (size_t)cfg->mcl * sizeof(int);
-    wk->iazero = (int *)p;                p += (8 * m + 2) * sizeof(int);
-    wk->iwrk = (int *)p;                  p += (size_t)(_MPK_ + 1) * m * sizeof(int);
-    wk->idp = (int *)p;
+    wk->ia = (int32_t *)p;                    p += m * sizeof(int32_t);
+    wk->iwork = (int32_t *)p;                 p += m * sizeof(int32_t);
+    wk->lencl = (int32_t *)p;                 p += (size_t)cfg->mcl * sizeof(int32_t);
+    wk->iazero = (int32_t *)p;                p += (8 * m + 2) * sizeof(int32_t);
+    wk->iwrk = (int32_t *)p;                  p += (size_t)(_MPK_ + 1) * m * sizeof(int32_t);
+    wk->idp = (int32_t *)p;                   p += (size_t)(_MPK_ + 1) * m * sizeof(int32_t);
+    wk->order = (int32_t *)p;
     return wk;
 }
 
@@ -250,13 +345,13 @@ void ilreco_workspace_destroy(ilreco_workspace *ws) {
     free(ws);
 }
 
-int ilreco_reconstruct(const ilreco_config *cfg, ilreco_workspace *ws,
-                       const ilreco_hit *hits, int n_hits,
-                       ilreco_cluster *out, int max_out) {
+int32_t ilreco_reconstruct(const ilreco_config *cfg, ilreco_workspace *ws,
+                           const ilreco_hit *hits, int32_t n_hits,
+                           ilreco_cluster *out, int32_t max_out) {
     if (!cfg || !ws || n_hits < 0 || (n_hits > 0 && !hits) ||
         ws->stride < cfg->madr || n_hits > cfg->madr - 2)
         return -1;
-    for (int i = 0; i < n_hits; ++i) {
+    for (int32_t i = 0; i < n_hits; ++i) {
         if (hits[i].col < 0 || hits[i].col >= cfg->ncol ||
             hits[i].row < 0 || hits[i].row >= cfg->nrow)
             return -1;
@@ -266,27 +361,28 @@ int ilreco_reconstruct(const ilreco_config *cfg, ilreco_workspace *ws,
         ws->id[i + 1] = hits[i].e;
     }
 
-    int nadcgam = 0;
-    const int ncl = cluster_search_core(cfg, ws, n_hits, ws->ia, ws->id, ws->lencl);
-    for (int icl = 1, ipncl = 1; icl <= ncl && nadcgam < cfg->madcgam - 2;
+    int32_t nadcgam = 0;
+    const int32_t ncl = cluster_search_core(cfg, ws, n_hits, ws->ia, ws->id,
+                                            ws->lencl);
+    for (int32_t icl = 1, ipncl = 1; icl <= ncl && nadcgam < cfg->madcgam - 2;
          ipncl += ws->lencl[icl++])
         process_cluster_core(cfg, ws, ws->lencl[icl], &ws->ia[ipncl - 1],
                              &ws->id[ipncl - 1], &nadcgam, ws->adcgam);
 
-    /* energy-descending, stable */
-    int order[_MADCGAM_];
-    for (int g = 1; g <= nadcgam; ++g) order[g - 1] = g;
-    for (int a = 1; a < nadcgam; ++a) {
-        const int key = order[a];
-        int b = a - 1;
-        while (b >= 0 && ws->adcgam[order[b]].e < ws->adcgam[key].e) {
-            order[b + 1] = order[b];
-            --b;
+    /* order the output by energy, descending (stable insertion sort) */
+    int32_t *order = ws->order;
+    for (int32_t g = 1; g <= nadcgam; ++g) order[g - 1] = g;
+    for (int32_t sorted_end = 1; sorted_end < nadcgam; ++sorted_end) {
+        const int32_t key = order[sorted_end];
+        int32_t slot = sorted_end - 1;
+        while (slot >= 0 && ws->adcgam[order[slot]].e < ws->adcgam[key].e) {
+            order[slot + 1] = order[slot];
+            --slot;
         }
-        order[b + 1] = key;
+        order[slot + 1] = key;
     }
-    const int n_out = nadcgam < max_out ? nadcgam : max_out;
-    for (int k = 0; k < n_out; ++k) {
+    const int32_t n_out = nadcgam < max_out ? nadcgam : max_out;
+    for (int32_t k = 0; k < n_out; ++k) {
         const adcgam_t *g = &ws->adcgam[order[k]];
         out[k].e = g->e;
         out[k].x = g->x[1] - 1.0;   /* 1-based column units -> 0-based */
@@ -298,67 +394,25 @@ int ilreco_reconstruct(const ilreco_config *cfg, ilreco_workspace *ws,
     return nadcgam;
 }
 
-/* ================== legacy API (default context shims) =================== */
+/* ========================== algorithm ===================================== */
 
-static ilreco_config *g_legacy_cfg = NULL;
-static ilreco_workspace *g_legacy_wk = NULL;
-
-static int ensure_legacy(const char *profile_path_or_null) {
-    if (g_legacy_cfg && profile_path_or_null) {           /* reload */
-        ilreco_workspace_destroy(g_legacy_wk);
-        ilreco_config_destroy(g_legacy_cfg);
-        g_legacy_cfg = NULL;
-        g_legacy_wk = NULL;
-    }
-    if (!g_legacy_cfg) {
-        char err[256];
-        g_legacy_cfg = config_create_internal(_NCOL_, _NROW_, _OFFSET_, _MADR_, _MADR0_,
-                                              profile_path_or_null, err, sizeof err);
-        if (!g_legacy_cfg) {
-            /* legacy behavior: report and terminate on unreadable profile */
-            fprintf(stderr, "(!)ERROR(!) %s\n", err);
-            exit(1);
-        }
-    }
-    if (!g_legacy_wk) g_legacy_wk = ilreco_workspace_create(g_legacy_cfg);
-    return g_legacy_cfg && g_legacy_wk;
-}
-
-void read_profile_data(const char *prof_file_name) {
-    if (access(prof_file_name, R_OK) == -1)
-        fprintf(stderr, "(!)ERROR(!) profile file '%s' does not exists or access is denied\n",
-                prof_file_name);
-    ensure_legacy(prof_file_name);
-}
-
-int cluster_search(int nw, int *ia, double *id, int *lencl) {
-    ensure_legacy(NULL);
-    return cluster_search_core(g_legacy_cfg, g_legacy_wk, nw, ia, id, lencl);
-}
-
-void process_cluster(int nadc, int *ia, double *id, int *nadcgam, adcgam_t *adcgam) {
-    ensure_legacy(NULL);
-    process_cluster_core(g_legacy_cfg, g_legacy_wk, nadc, ia, id, nadcgam, adcgam);
-}
-
-/* ======================= algorithm (unchanged) ============================ */
-
-static int cluster_search_core(const ilreco_config *cf, ilreco_workspace *wk,
-                               int nw, int *ia, double *id, int *lencl) {
+static int32_t cluster_search_core(const ilreco_config *cf, ilreco_workspace *wk,
+                                   int32_t nw, int32_t *ia, double *id,
+                                   int32_t *lencl) {
   if(nw<2) {
     lencl[1] = 1;
     return nw;
   }
   order_hits(nw,ia,id);       // addresses must be in increasing order
 
-  int *iwork = wk->iwork;  double *dwork = wk->dwork;
-  int ncl = 0, next  = 1, iak = 0;
-  for(int k = 2; k <= nw+1; ++k) {
+  int32_t *iwork = wk->iwork;  double *dwork = wk->dwork;
+  int32_t ncl = 0, next  = 1, iak = 0;
+  for(int32_t k = 2; k <= nw+1; ++k) {
     if(k<=nw) iak = ia[k];
     if(iak-ia[k-1]<=1 && k<=nw) continue;
 
-    int ib  = next; //  first word of the (sub)cluster
-    int ie  = k-1;  //  last  word of the (sub)cluster
+    int32_t ib  = next; //  first word of the (sub)cluster
+    int32_t ie  = k-1;  //  last  word of the (sub)cluster
     next    = k;    //  first word of the next (sub)cluster
     if(ncl>cf->mcl-2) {
       printf("maximum number of clusters reached\n");
@@ -369,27 +423,27 @@ static int cluster_search_core(const ilreco_config *cf, ilreco_workspace *wk,
 //
 //  glue subclusters
 //
-    int ias     = ia[ib];
-    int iaf     = ia[ie];
-    int last    = ib-1;
-    int lastcl  = ncl-1;
+    int32_t ias     = ia[ib];
+    int32_t iaf     = ia[ie];
+    int32_t last    = ib-1;
+    int32_t lastcl  = ncl-1;
 
-    for(int icl = lastcl; icl>0; --icl) {
-      int leng  = lencl[icl];
+    for(int32_t icl = lastcl; icl>0; --icl) {
+      int32_t leng  = lencl[icl];
       if(ias-ia[last] > cf->offset) break;  //  no subclusters to glue
-      for(int i = last; i > last-leng; --i) {
+      for(int32_t i = last; i > last-leng; --i) {
         if(ias-ia[i]  >  cf->offset) break;
         if(iaf-ia[i]  >= cf->offset) {      //  subclusters to glue
           if(icl<ncl-1 && leng<cf->madr) {
 
-            memmove(&iwork[1],&ia[last+1-leng],leng*sizeof(int));
-            memmove(&ia[last+1-leng],&ia[last+1],(ib-1-last)*sizeof(int));
-            memmove(&ia[ib-leng],&iwork[1],leng*sizeof(int));
+            memmove(&iwork[1],&ia[last+1-leng],leng*sizeof(int32_t));
+            memmove(&ia[last+1-leng],&ia[last+1],(ib-1-last)*sizeof(int32_t));
+            memmove(&ia[ib-leng],&iwork[1],leng*sizeof(int32_t));
             memcpy(&dwork[1],&id[last+1-leng],leng*sizeof(double));
             memmove(&id[last+1-leng],&id[last+1],(ib-1-last)*sizeof(double));
             memcpy(&id[ib-leng],&dwork[1],leng*sizeof(double));
 
-            for(int j = icl; j < ncl-1; ++j) lencl[j] = lencl[j+1];
+            for(int32_t j = icl; j < ncl-1; ++j) lencl[j] = lencl[j+1];
           }
           ib  -= leng;
           lencl[ncl-1]  = lencl[ncl] + leng;
@@ -403,13 +457,13 @@ static int cluster_search_core(const ilreco_config *cf, ilreco_workspace *wk,
   return ncl;
 }
 
-static void order_hits(int nw, int *ia, double *id) {
+static void order_hits(int32_t nw, int32_t *ia, double *id) {
 
-  for(int k = 2; k <= nw; ++k) {
+  for(int32_t k = 2; k <= nw; ++k) {
     if(ia[k] > ia[k-1])  continue;
-    int     iat = ia[k];
+    int32_t     iat = ia[k];
     double  idt = id[k];
-    for(int i = k-1; i>=0; --i)
+    for(int32_t i = k-1; i>=0; --i)
       if(i) {
         if(iat<ia[i]) {
           ia[i+1] = ia[i];
@@ -429,16 +483,16 @@ static void order_hits(int nw, int *ia, double *id) {
 }
 
 static void process_cluster_core(const ilreco_config *cf, ilreco_workspace *wk,
-                                 int nadc, int *ia, double *id,
-                                 int *nadcgam, adcgam_t *adcgam) {
+                                 int32_t nadc, int32_t *ia, double *id,
+                                 int32_t *nadcgam, adcgam_t *adcgam) {
   order_hits(nadc,ia,id);     // addresses must be in increasing order
 
   double minpk = cf->min_seed_gev;
-  int ipnpk[_MPK_];
+  int32_t ipnpk[_MPK_];
 
   if(nadc>=3) {
     double idsum = 0.;
-    for(int i = 1; i <= nadc; ++i) idsum += id[i];
+    for(int32_t i = 1; i <= nadc; ++i) idsum += id[i];
     double ib = cf->seed_scale*log(1.+idsum);
     if(ib>1) minpk *= ib;
     minpk = nint(1.e2*minpk);
@@ -446,27 +500,27 @@ static void process_cluster_core(const ilreco_config *cf, ilreco_workspace *wk,
     minpk = 1.e-4*minpk;
   }
 
-  int npk = 0;
-  for(int ic = 1; ic <= nadc; ++ic) {
+  int32_t npk = 0;
+  for(int32_t ic = 1; ic <= nadc; ++ic) {
     double iac = id[ic];
     if(iac<minpk) continue;
-    int ixy     = ia[ic];
-    int ixymax  = ixy + cf->offset + 1;
-    int ixymin  = ixy - cf->offset - 1;
-    int iyc     = ixy - (ixy/cf->offset)*cf->offset;
+    int32_t ixy     = ia[ic];
+    int32_t ixymax  = ixy + cf->offset + 1;
+    int32_t ixymin  = ixy - cf->offset - 1;
+    int32_t iyc     = ixy - (ixy/cf->offset)*cf->offset;
 
-    int in;
+    int32_t in;
     in  = ic  + 1;
-    int skipflag = 0;
+    int32_t skipflag = 0;
     while(in<=nadc && ia[in] <= ixymax) {
-      int iy  = ia[in] - (ia[in]/cf->offset)*cf->offset;
+      int32_t iy  = ia[in] - (ia[in]/cf->offset)*cf->offset;
       if(abs(iy-iyc)<=1 && id[in]>=iac) {skipflag = 1; break;}
       ++in;
     }
     if(skipflag)  continue;
     in = ic - 1;
     while (in>=1 && ia[in] >= ixymin) {
-      int iy  = ia[in] - (ia[in]/cf->offset)*cf->offset;
+      int32_t iy  = ia[in] - (ia[in]/cf->offset)*cf->offset;
       if(abs(iy-iyc)<=1 && id[in]>iac)  {skipflag = 1; break;}
       --in;
     }
@@ -485,16 +539,16 @@ static void process_cluster_core(const ilreco_config *cf, ilreco_workspace *wk,
 }
 
 static void add_single_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
-                              int nadc, int *ia, double *id, int *ipnpk,
-                              int *nadcgam, adcgam_t *adcgam) {
+                              int32_t nadc, int32_t *ia, double *id, int32_t *ipnpk,
+                              int32_t *nadcgam, adcgam_t *adcgam) {
 
   const double  chisq1  = 90.; // 3.0 value of chi2 for preliminary seperation
 
-  int n1  = ++(*nadcgam);
-  int ic  = ipnpk[1];
-  int ix  = ia[ic]/cf->offset;
-  int iy  = ia[ic]-ix*cf->offset;
-  int itype = peak_type(cf,ix,iy);
+  int32_t n1  = ++(*nadcgam);
+  int32_t ic  = ipnpk[1];
+  int32_t ix  = ia[ic]/cf->offset;
+  int32_t iy  = ia[ic]-ix*cf->offset;
+  int32_t itype = peak_type(cf,ix,iy);
 
   double  e1 = 0., x1 = 0., y1 = 0., e2 = 0., x2 = 0., y2 = 0., chisq = chisq1;
   gamma_cluster(cf,wk,itype,nadc,ia,id,&chisq,&e1,&x1,&y1,&e2,&x2,&y2);
@@ -509,7 +563,7 @@ static void add_single_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
   adcgam[n1].stat = itype;
 
   if(e2>0. && *nadcgam < cf->madcgam-3) {
-    int n2        = ++(*nadcgam);
+    int32_t n2        = ++(*nadcgam);
     adcgam[n2].e    = e2;
     adcgam[n2].x[1] = x2;
     adcgam[n2].y[1] = y2;
@@ -526,7 +580,7 @@ static void add_single_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
     adcgam[n2].x[0] = 0.5*(x2-x1);
     adcgam[n2].y[0] = 0.5*(y2-y1);
 
-    for(int j = 1; j <= nadc; ++j) {
+    for(int32_t j = 1; j <= nadc; ++j) {
       if(j>=_MAXLEN_) break;
       adcgam[n1].element[j] = ia[j];
       adcgam[n2].element[j] = ia[j];
@@ -534,7 +588,7 @@ static void add_single_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
       adcgam[n2].elfract[j] = id[j]*e2/(e1+e2);
     }
   } else {
-    for(int j = 1; j <= nadc; ++j) {
+    for(int32_t j = 1; j <= nadc; ++j) {
       if(j>=_MAXLEN_) break;
       adcgam[n1].element[j] = ia[j];
       adcgam[n1].elfract[j] = nint(1.e4*id[j]);
@@ -544,34 +598,34 @@ static void add_single_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
 }
 
 static void add_many_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
-                            int nadc, int *ia, double *id, int npk, int *ipnpk,
-                            int *nadcgam, adcgam_t *adcgam) {
+                            int32_t nadc, int32_t *ia, double *id, int32_t npk, int32_t *ipnpk,
+                            int32_t *nadcgam, adcgam_t *adcgam) {
 
   const double  idelta  =  0.; //  min cell energy part to be a member of separated cluster
   const double  chisq1  = 90.; // 3.0 value of chi2 for preliminary seperation
   const double  chisq2  = 50.; // 0.8 value of chi2 for final seperation
-  const int     niter   =   6;
-  int ngam0 = *nadcgam;
-  int igmpk[_MPK_][3];
+  const int32_t     niter   =   6;
+  int32_t ngam0 = *nadcgam;
+  int32_t igmpk[_MPK_][3];
 
   double ratio = 1.;
-  for(int iter = 1; iter <= niter; ++iter) {
-    for(int i = 1; i <= nadc; ++i) {IWRK(wk,0,i) = 0; FWRK(wk,0,i) = 0.;}
+  for(int32_t iter = 1; iter <= niter; ++iter) {
+    for(int32_t i = 1; i <= nadc; ++i) {IWRK(wk,0,i) = 0; FWRK(wk,0,i) = 0.;}
     double epk[_MPK_], xpk[_MPK_], ypk[_MPK_];
-    for(int ipk = 1; ipk <= npk; ++ipk) {
-      int ic = ipnpk[ipk];
+    for(int32_t ipk = 1; ipk <= npk; ++ipk) {
+      int32_t ic = ipnpk[ipk];
       if(iter!=1) ratio = FWRK(wk,ipk,ic) / FWRK(wk,npk+1,ic);
       double eg = id[ic] * ratio;
-      int ixypk = ia[ic];
-      int ixpk  = ixypk / cf->offset;
-      int iypk  = ixypk - ixpk * cf->offset;
+      int32_t ixypk = ia[ic];
+      int32_t ixpk  = ixypk / cf->offset;
+      int32_t iypk  = ixypk - ixpk * cf->offset;
       epk[ipk]  = eg;
       xpk[ipk]  = eg*ixpk;
       ypk[ipk]  = eg*iypk;
-      for(int in = ic + 1; in <= nadc; ++in) {
-        int ixy = ia[in];
-        int ix  = ixy / cf->offset;
-        int iy  = ixy - ix * cf->offset;
+      for(int32_t in = ic + 1; in <= nadc; ++in) {
+        int32_t ixy = ia[in];
+        int32_t ix  = ixy / cf->offset;
+        int32_t iy  = ixy - ix * cf->offset;
         if(ixy-ixypk>cf->offset+1) break;
         if(abs(iy-iypk)>1) continue;
         if(iter!=1) ratio = FWRK(wk,ipk,in) / FWRK(wk,npk+1,in);
@@ -581,10 +635,10 @@ static void add_many_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
         ypk[ipk] += eg*iy;
       }
 
-      for(int in = ic - 1; in>0; --in) {
-        int ixy = ia[in];
-        int ix  = ixy / cf->offset;
-        int iy  = ixy - ix * cf->offset;
+      for(int32_t in = ic - 1; in>0; --in) {
+        int32_t ixy = ia[in];
+        int32_t ix  = ixy / cf->offset;
+        int32_t iy  = ixy - ix * cf->offset;
         if(ixypk-ixy>cf->offset+1) break;
         if(abs(iy-iypk)>1) continue;
         if(iter!=1) ratio = FWRK(wk,ipk,in) / FWRK(wk,npk+1,in);
@@ -601,10 +655,10 @@ static void add_many_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
         printf("WRN: lost maximum with peak energy %lf at ITER = %d\n", id[ic], iter);
       }
 
-      for(int i = 1; i <= nadc; ++i) {
-        int ixy = ia[i];
-        int ix  = ixy / cf->offset;
-        int iy  = ixy - ix * cf->offset;
+      for(int32_t i = 1; i <= nadc; ++i) {
+        int32_t ixy = ia[i];
+        int32_t ix  = ixy / cf->offset;
+        int32_t iy  = ixy - ix * cf->offset;
         double dx = fabs(ix-xpk[ipk]);
         double dy = fabs(iy-ypk[ipk]);
         double a  = epk[ipk]*profile_mean(cf,dx,dy);
@@ -615,8 +669,8 @@ static void add_many_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
       }
     }
 
-    for(int i = 1; i <= nadc; ++i) {
-      int iwk = IWRK(wk,0,i);
+    for(int32_t i = 1; i <= nadc; ++i) {
+      int32_t iwk = IWRK(wk,0,i);
       if(iwk<1) iwk = 1;
       IWRK(wk,npk+1,i) = iwk;
       if(FWRK(wk,0,i)>1.e-6)
@@ -626,11 +680,11 @@ static void add_many_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
     }
   }
 
-  for(int ipk = 1; ipk <= npk; ++ipk) {
-    int leng = 0;
-    for(int i = 1; i <= nadc; ++i) {
+  for(int32_t ipk = 1; ipk <= npk; ++ipk) {
+    int32_t leng = 0;
+    for(int32_t i = 1; i <= nadc; ++i) {
       if(FWRK(wk,0,i) <= 1.e-6) continue;
-      int ixy   = ia[i];
+      int32_t ixy   = ia[i];
       double fe = 1.e4*id[i]*FWRK(wk,ipk,i)/FWRK(wk,0,i);
       if(fe<=idelta)  continue;
       ++leng;
@@ -643,11 +697,11 @@ static void add_many_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
     if(*nadcgam >= cf->madcgam-2) return;
     igmpk[ipk][2] = 0;
     if(!leng) continue;
-    int n1  = ++(*nadcgam);
-    int ic  = ipnpk[ipk];
-    int ix  = ia[ic] / cf->offset;
-    int iy  = ia[ic] - ix * cf->offset;
-    int itype = peak_type(cf,ix,iy);
+    int32_t n1  = ++(*nadcgam);
+    int32_t ic  = ipnpk[ipk];
+    int32_t ix  = ia[ic] / cf->offset;
+    int32_t iy  = ia[ic] - ix * cf->offset;
+    int32_t itype = peak_type(cf,ix,iy);
 
     double  e1 = 0., x1 = 0., y1 = 0., e2 = 0., x2 = 0., y2 = 0., chisq = chisq1;
     gamma_cluster(cf,wk,itype,leng,&IWRK(wk,npk+1,0),&FWRK(wk,npk+2,0),&chisq,&e1,&x1,&y1,&e2,&x2,&y2);
@@ -665,7 +719,7 @@ static void add_many_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
     igmpk[ipk][2]   = n1;
 
     if(e2>0. && n1 < cf->madcgam-3) {
-      int n2        = ++(*nadcgam);
+      int32_t n2        = ++(*nadcgam);
       adcgam[n2].e    = e2;
       adcgam[n2].x[1] = x2;
       adcgam[n2].y[1] = y2;
@@ -683,21 +737,21 @@ static void add_many_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
     }
   }
 
-  for(int i = 1; i <= nadc; ++i) {IWRK(wk,0,i) = 0; IDP(wk,0,i) = 0; FWRK(wk,0,i) = 0.;}
+  for(int32_t i = 1; i <= nadc; ++i) {IWRK(wk,0,i) = 0; IDP(wk,0,i) = 0; FWRK(wk,0,i) = 0.;}
 
-  for(int ipk = 1; ipk <= npk; ++ipk)
-    for(int i = 1; i <= nadc; ++i) {
+  for(int32_t ipk = 1; ipk <= npk; ++ipk)
+    for(int32_t i = 1; i <= nadc; ++i) {
       IWRK(wk,ipk,i) = 0; IDP(wk,ipk,i) = 0; FWRK(wk,ipk,i) = 0.;
       if(igmpk[ipk][2])
-        for(int ig = igmpk[ipk][1]; ig <= igmpk[ipk][2]; ++ig) {
+        for(int32_t ig = igmpk[ipk][1]; ig <= igmpk[ipk][2]; ++ig) {
 
-          int ixy = ia[i];
-          int ix  = ixy / cf->offset;
-          int iy  = ixy - ix * cf->offset;
+          int32_t ixy = ia[i];
+          int32_t ix  = ixy / cf->offset;
+          int32_t iy  = ixy - ix * cf->offset;
           double dx = ix-adcgam[ig].x[1];
           double dy = iy-adcgam[ig].y[1];
           double a  = adcgam[ig].e*profile_mean(cf,dx,dy);
-          int   iia = nint(a*1.e4);
+          int32_t   iia = nint(a*1.e4);
           IWRK(wk,ipk,i) += iia;
           IWRK(wk,0,i)   += iia;
           FWRK(wk,ipk,i) += a;
@@ -706,25 +760,25 @@ static void add_many_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
         }
     }
 
-  for(int i = 1; i <= nadc; ++i) {
+  for(int32_t i = 1; i <= nadc; ++i) {
     IDP(wk,0,i) = 0;
-    for(int ipk = 1; ipk <= npk; ++ipk)
+    for(int32_t ipk = 1; ipk <= npk; ++ipk)
       IDP(wk,0,i) += IDP(wk,ipk,i);
-    int ide = nint(id[i]*1.e4) - IDP(wk,0,i);
+    int32_t ide = nint(id[i]*1.e4) - IDP(wk,0,i);
     if(!ide || FWRK(wk,0,i) == 0.) continue;
 
     double fw[_MPK_];
-    for(int ipk = 1; ipk <= npk; ++ipk)
+    for(int32_t ipk = 1; ipk <= npk; ++ipk)
       fw[ipk] = FWRK(wk,ipk,i)/FWRK(wk,0,i);
 
-    int idecorr = 0;
-    for(int ipk = 1; ipk <= npk; ++ipk) {
+    int32_t idecorr = 0;
+    for(int32_t ipk = 1; ipk <= npk; ++ipk) {
       double fia = ide*fw[ipk];
       if(FWRK(wk,ipk,i)+fia>0.) {
         FWRK(wk,ipk,i) += fia;
         FWRK(wk,0,i)   += fia;
       }
-      int iia = nint(fia);
+      int32_t iia = nint(fia);
       if(IWRK(wk,ipk,i)+iia>0)  {
         IWRK(wk,ipk,i) += iia;
         IWRK(wk,0,i)   += iia;
@@ -737,9 +791,9 @@ static void add_many_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
   }
 
   *nadcgam  = ngam0;          //  reanalize last (two) gamma(s)
-  for(int ipk = 1; ipk <= npk; ++ipk) {
-    int leng = 0;
-    for(int i = 1; i <= nadc; ++i) {
+  for(int32_t ipk = 1; ipk <= npk; ++ipk) {
+    int32_t leng = 0;
+    for(int32_t i = 1; i <= nadc; ++i) {
       if(IWRK(wk,0,i) <= 0) continue;
       double fe = 1.e4*id[i]*FWRK(wk,ipk,i)/FWRK(wk,0,i);
       if(fe<=idelta)  continue;
@@ -751,11 +805,11 @@ static void add_many_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
     }
     if(*nadcgam >= cf->madcgam-2) return;
     if(!leng) continue;
-    int n1  = ++(*nadcgam);
-    int ic  = ipnpk[ipk];
-    int ix  = ia[ic] / cf->offset;
-    int iy  = ia[ic] - ix * cf->offset;
-    int itype = peak_type(cf,ix,iy);
+    int32_t n1  = ++(*nadcgam);
+    int32_t ic  = ipnpk[ipk];
+    int32_t ix  = ia[ic] / cf->offset;
+    int32_t iy  = ia[ic] - ix * cf->offset;
+    int32_t itype = peak_type(cf,ix,iy);
 
     double  e1 = 0., x1 = 0., y1 = 0., e2 = 0., x2 = 0., y2 = 0., chisq = chisq2;
     gamma_cluster(cf,wk,itype,leng,&IWRK(wk,npk+1,0),&FWRK(wk,npk+2,0),&chisq,&e1,&x1,&y1,&e2,&x2,&y2);
@@ -770,7 +824,7 @@ static void add_many_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
     adcgam[n1].stat = itype;
 
     if(e2>0. && n1 < cf->madcgam-3) {
-      int n2        = ++(*nadcgam);
+      int32_t n2        = ++(*nadcgam);
       adcgam[n2].e    = e2;
       adcgam[n2].x[1] = x2;
       adcgam[n2].y[1] = y2;
@@ -786,7 +840,7 @@ static void add_many_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
       adcgam[n2].x[0] = 0.5*(x2-x1);
       adcgam[n2].y[0] = 0.5*(y2-y1);
 
-      for(int j = 1; j <= leng; ++j) {
+      for(int32_t j = 1; j <= leng; ++j) {
         if(j>=_MAXLEN_) break;
         adcgam[n1].element[j] = IWRK(wk,npk+1,j);
         adcgam[n2].element[j] = IWRK(wk,npk+1,j);
@@ -794,7 +848,7 @@ static void add_many_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
         adcgam[n2].elfract[j] = nint(IWRK(wk,npk+2,j)*e2/(e1+e2));
       }
     } else {
-      for(int j = 1; j <= leng; ++j) {
+      for(int32_t j = 1; j <= leng; ++j) {
         if(j>=_MAXLEN_) break;
         adcgam[n1].element[j] = IWRK(wk,npk+1,j);
         adcgam[n1].elfract[j] = IWRK(wk,npk+2,j);
@@ -805,15 +859,15 @@ static void add_many_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
   return;
 }
 
-static int peak_type(const ilreco_config *cf, int ix, int iy) {
+static int32_t peak_type(const ilreco_config *cf, int32_t ix, int32_t iy) {
 
   if(cf->cellmask) {
     /* mask authoritative: 1 = missing in-grid neighbor (hole border / rim),
        2 = bounding-box ring, 0 = fully surrounded */
-    for(int dx = -1; dx <= 1; ++dx)
-      for(int dy = -1; dy <= 1; ++dy) {
+    for(int32_t dx = -1; dx <= 1; ++dx)
+      for(int32_t dy = -1; dy <= 1; ++dy) {
         if(!dx && !dy) continue;
-        int nx = ix + dx, ny = iy + dy;
+        int32_t nx = ix + dx, ny = iy + dy;
         if(nx >= 1 && nx <= cf->ncol && ny >= 1 && ny <= cf->nrow &&
            !cell_exists(cf, nx, ny)) return 1;
       }
@@ -835,14 +889,14 @@ static int peak_type(const ilreco_config *cf, int ix, int iy) {
 }
 
 static void gamma_cluster(const ilreco_config *cf, ilreco_workspace *wk,
-                          int itype, int nadc, int *ia, double *id,
+                          int32_t itype, int32_t nadc, int32_t *ia, double *id,
                           double *chisq, double *e1, double *x1, double *y1,
                           double *e2, double *x2, double *y2)  {
 
   const double  xm2cut = 1.7e-3*cf->zcal;
 
   *e2 = 0.; *x2 = 0.; *y2 = 0.;
-  int nzero, *iazero = wk->iazero;
+  int32_t nzero, *iazero = wk->iazero;
   fill_zero_hits(cf,nadc,ia,&nzero,iazero);          // make use of good but zero signal cells around clusters
   mom1_cluster(cf,nadc,ia,id,nzero,iazero,e1,x1,y1); // get initial e,x,y
   if(nadc <= 0) return;
@@ -850,7 +904,7 @@ static void gamma_cluster(const ilreco_config *cf, ilreco_workspace *wk,
   double chimem   = *chisq;   // memorize reference chi2 value
   double  chi0    = chisq1_cluser(cf,nadc,ia,id,nzero,iazero,*e1,*x1,*y1);  //  get initial chi2
   double  chisq0  = chi0;
-  int        ndof = nzero + nadc - 2;   //  number of degrees of freedom
+  int32_t        ndof = nzero + nadc - 2;   //  number of degrees of freedom
   if(ndof<1) ndof = 1;
 
   *chisq = chi0/(double)ndof;
@@ -917,13 +971,13 @@ static void gamma_cluster(const ilreco_config *cf, ilreco_workspace *wk,
   return;
 }
 
-static void fill_zero_hits(const ilreco_config *cf, int nadc, int *ia,
-                           int *nzero, int *iazero) {
+static void fill_zero_hits(const ilreco_config *cf, int32_t nadc, int32_t *ia,
+                           int32_t *nzero, int32_t *iazero) {
   *nzero = 0;
 
-  for(int i = 1; i <= nadc; ++i) {
-    int ix = ia[i]/cf->offset;
-    int iy = ia[i] - ix * cf->offset;
+  for(int32_t i = 1; i <= nadc; ++i) {
+    int32_t ix = ia[i]/cf->offset;
+    int32_t iy = ia[i] - ix * cf->offset;
 
     if(ix>1)  {
       if(cell_exists(cf,ix-1,iy))
@@ -947,17 +1001,17 @@ static void fill_zero_hits(const ilreco_config *cf, int nadc, int *ia,
       iazero[++(*nzero)] = iy+1 + ix * cf->offset;        //  top neib
   }
 
-  for(int i = 1; i <= (*nzero); ++i)
-    for(int j = 1; j <= nadc; ++j)
+  for(int32_t i = 1; i <= (*nzero); ++i)
+    for(int32_t j = 1; j <= nadc; ++j)
       if(ia[j] == iazero[i]) iazero[i] = -1;
 
-  for(int i = 1; i <= (*nzero); ++i)
+  for(int32_t i = 1; i <= (*nzero); ++i)
     if(iazero[i] != -1)
-      for(int j = i+1; j <= (*nzero); ++j)
+      for(int32_t j = i+1; j <= (*nzero); ++j)
         if(iazero[j]==iazero[i]) iazero[j] = -1;
 
-  int newzero = 0;
-  for(int i = 1; i <= (*nzero); ++i)
+  int32_t newzero = 0;
+  for(int32_t i = 1; i <= (*nzero); ++i)
     if(iazero[i] != -1 /* && status_channel[?]==0 */)
       iazero[++newzero] = iazero[i];
 
@@ -965,14 +1019,14 @@ static void fill_zero_hits(const ilreco_config *cf, int nadc, int *ia,
   return;
 }
 
-static void mom1_cluster(const ilreco_config *cf, int nadc, int *ia, double *id,
-                         int nzero, int *iazero, double *e, double *x, double *y) {
+static void mom1_cluster(const ilreco_config *cf, int32_t nadc, int32_t *ia, double *id,
+                         int32_t nzero, int32_t *iazero, double *e, double *x, double *y) {
 
   *e = *x = *y = 0.;
-  for(int i = 1; i <= nadc; ++i) {
+  for(int32_t i = 1; i <= nadc; ++i) {
     double a  = id[i];
-    int ix    = ia[i]/cf->offset;
-    int iy    = ia[i] - ix*cf->offset;
+    int32_t ix    = ia[i]/cf->offset;
+    int32_t iy    = ia[i] - ix*cf->offset;
     *e  += a;
     *x  += a*ix;
     *y  += a*iy;
@@ -983,12 +1037,12 @@ static void mom1_cluster(const ilreco_config *cf, int nadc, int *ia, double *id,
   *y  /= *e;
 
   double corr = 0.;
-  for(int i = 1; i <= nadc; ++i) {
+  for(int32_t i = 1; i <= nadc; ++i) {
     double dx = (ia[i]/cf->offset)-(*x);
     double dy = (ia[i] - (ia[i]/cf->offset)*cf->offset)-(*y);
     corr  += profile_mean(cf,dx,dy);
   }
-  for(int i = 1; i <= nzero; ++i) {
+  for(int32_t i = 1; i <= nzero; ++i) {
     double dx = (iazero[i]/cf->offset)-(*x);
     double dy = (iazero[i] - (iazero[i]/cf->offset)*cf->offset)-(*y);
     corr  += profile_mean(cf,dx,dy);
@@ -1001,14 +1055,14 @@ static void mom1_cluster(const ilreco_config *cf, int nadc, int *ia, double *id,
   return;
 }
 
-static void mom2_cluster(const ilreco_config *cf, int nadc, int *ia, double *id,
-                         int nzero, int *iazero, double *e, double *x, double *y,
+static void mom2_cluster(const ilreco_config *cf, int32_t nadc, int32_t *ia, double *id,
+                         int32_t nzero, int32_t *iazero, double *e, double *x, double *y,
                          double *xx, double *yy, double *xy) {
   *e = *x = *y = *xx = *yy = *xy = 0.;
-  for(int i = 1; i <= nadc; ++i) {
+  for(int32_t i = 1; i <= nadc; ++i) {
     double a  = id[i];
-    int ix    = ia[i]/cf->offset;
-    int iy    = ia[i] - ix*cf->offset;
+    int32_t ix    = ia[i]/cf->offset;
+    int32_t iy    = ia[i] - ix*cf->offset;
     *e  += a;
     *x  += a*ix;
     *y  += a*iy;
@@ -1018,22 +1072,22 @@ static void mom2_cluster(const ilreco_config *cf, int nadc, int *ia, double *id,
   *x  /= *e;
   *y  /= *e;
 
-  for(int i = 1; i <= nadc; ++i) {
+  for(int32_t i = 1; i <= nadc; ++i) {
     double a  = id[i];
-    int ix    = ia[i]/cf->offset;
-    int iy    = ia[i] - ix*cf->offset;
+    int32_t ix    = ia[i]/cf->offset;
+    int32_t iy    = ia[i] - ix*cf->offset;
     *xx += a/(*e)*(ix-(*x))*(ix-(*x));
     *yy += a/(*e)*(iy-(*y))*(iy-(*y));
     *xy += a/(*e)*(ix-(*x))*(iy-(*y));
   }
 
   double corr = 0.;
-  for(int i = 1; i <= nadc; ++i) {
+  for(int32_t i = 1; i <= nadc; ++i) {
     double dx = (ia[i]/cf->offset)-(*x);
     double dy = (ia[i] - (ia[i]/cf->offset)*cf->offset)-(*y);
     corr  += profile_mean(cf,dx,dy);
   }
-  for(int i = 1; i <= nzero; ++i) {
+  for(int32_t i = 1; i <= nzero; ++i) {
     double dx = (iazero[i]/cf->offset)-(*x);
     double dy = (iazero[i] - (iazero[i]/cf->offset)*cf->offset)-(*y);
     corr  += profile_mean(cf,dx,dy);
@@ -1046,14 +1100,14 @@ static void mom2_cluster(const ilreco_config *cf, int nadc, int *ia, double *id,
   return;
 }
 
-static double chisq1_cluser(const ilreco_config *cf, int nadc, int *ia, double *id,
-                            int nzero, int *iazero, double e, double x, double y)  {
+static double chisq1_cluser(const ilreco_config *cf, int32_t nadc, int32_t *ia, double *id,
+                            int32_t nzero, int32_t *iazero, double e, double x, double y)  {
 
   double chi2 = 0.;
 
-  for(int i = 1; i <= nadc; ++i) {
-    int ix    = ia[i]/cf->offset;
-    int iy    = ia[i] - ix*cf->offset;
+  for(int32_t i = 1; i <= nadc; ++i) {
+    int32_t ix    = ia[i]/cf->offset;
+    int32_t iy    = ia[i] - ix*cf->offset;
     if(e) {
       if(fabs(x-ix)<=6.0 && fabs(y-iy)<=6.0)  {
         double f = (profile_mean(cf,x-ix,y-iy) - id[i]/e);
@@ -1065,9 +1119,9 @@ static double chisq1_cluser(const ilreco_config *cf, int nadc, int *ia, double *
     }
   }
 
-  for(int i = 1; i <= nzero; ++i) {
-    int ix    = iazero[i]/cf->offset;
-    int iy    = iazero[i] - ix*cf->offset;
+  for(int32_t i = 1; i <= nzero; ++i) {
+    int32_t ix    = iazero[i]/cf->offset;
+    int32_t iy    = iazero[i] - ix*cf->offset;
     if(e) {
       double f = profile_mean(cf,x-ix,y-iy);
       chi2 += 1.e4*e*f*f/sigma2(cf,x-ix,y-iy,e);
@@ -1092,7 +1146,7 @@ static double sigma2(const ilreco_config *cf, double dx, double dy, double e) {
 
 static double d2c(const ilreco_config *cf, double x, double y) {
   double ax = fabs(x*1.e2), ay = fabs(y*1.e2);
-  int i = (int)ax, j = (int)ay;
+  int32_t i = (int32_t)ax, j = (int32_t)ay;
   double wx = ax-i, wy = ay-j;
   if(i<NPROF && j<NPROF)
     return AD2C(cf,i,j)     * (1.-wx) * (1.-wy) +
@@ -1110,7 +1164,7 @@ static double chisq2t_hyc(const ilreco_config *cf,
                           double ecell, double e1, double dx1, double dy1,
                           double e2, double dx2, double dy2, double f1, double f2) {
   double s;
-  int ic = !(!(e1))*10+!(!(e2));
+  int32_t ic = !(!(e1))*10+!(!(e2));
   switch(ic) {
     case 11:
       s = e1*sigma2(cf,dx1,dy1,e1) + e2*sigma2(cf,dx2,dy2,e2);
@@ -1129,8 +1183,8 @@ static double chisq2t_hyc(const ilreco_config *cf,
     return d*d/s;
 }
 
-static void tgamma_cluster(const ilreco_config *cf, int nadc, int *ia, double *id,
-                           int nzero, int *iazero, double *chisq,
+static void tgamma_cluster(const ilreco_config *cf, int32_t nadc, int32_t *ia, double *id,
+                           int32_t nzero, int32_t *iazero, double *chisq,
                            double *ee, double *xx, double *yy,
                            double *e2, double *x2, double *y2) {
   (void)cf; (void)nadc; (void)ia; (void)id; (void)nzero; (void)iazero;
@@ -1140,7 +1194,7 @@ static void tgamma_cluster(const ilreco_config *cf, int nadc, int *ia, double *i
 
 static double profile_mean(const ilreco_config *cf, double x, double y) {
   double ax = fabs(x*1.e2), ay = fabs(y*1.e2);
-  int i = (int)ax, j = (int)ay;
+  int32_t i = (int32_t)ax, j = (int32_t)ay;
   double wx = ax-i, wy = ay-j;
 
   if(i<NPROF && j<NPROF)
@@ -1151,181 +1205,8 @@ static double profile_mean(const ilreco_config *cf, double x, double y) {
   return 0.;
 }
 
-/* ================= legacy test scaffolding (unchanged) ==================== */
-
-int read_event(int *nw, int *ia, double *id) {
-
-  double  ech[_NCOL_+1][_NROW_+1];
-  static int ievent = 0;
-  ++ievent;
-
-//  set event pattern for testing, units are [GeV]:
-
-  memset(ech,0,sizeof(ech));
-
-  const int col_shift[26] = {0, 0, 1,  1,  0, -1, -1, -1, 0, 1, 2,  2,  2,  1,  0, -1, -2, -2, -2, -2, -2, -1, 0, 1, 2, 2};
-  const int row_shift[26] = {0, 0, 0, -1, -1, -1,  0,  1, 1, 1, 0, -1, -2, -2, -2, -2, -2, -1,  0,  1,  2,  2, 2, 2, 2, 1};
-
-  int ncl = ZBQLUAB(1.01,10.99);
-  for(int icl = 1; icl <= ncl; ++icl) {
-    int dim   = ZBQLUAB(1.01,12.99);
-    int ccol  = ZBQLUAB(1.01,(double)_NCOL_);
-    int crow  = ZBQLUAB(1.01,(double)_NROW_);
-    int ec    = ZBQLUAB(0.1,5.)*1.e4;
-    ec /= 100;
-    ec *= 100;
-    ech[crow][ccol] = ec*1.e-4;
-    for(int i = 2; i <= dim; ++i) {
-      int col = ccol + col_shift[i];
-      int row = crow + row_shift[i];
-      if(col<1 || row<1 || col>=_NCOL_ || row>=_NROW_) continue;
-      int e   = ec * exp(-ZBQLUAB(1.6,2.4)*hypot(col-ccol,row-crow));
-      e /= 100;
-      e *= 100;
-      ech[row][col] = e*1.e-4;
-    }
-  }
-
-  int n = 0;
-  for(int i = 1; i <= _NCOL_; ++i) {
-    for(int j = 1; j <= _NROW_; ++j) {
-      if(ech[i][j]>MIN_COUNTER_ENERGY && n < _MADR_) {
-        ++n;
-        ia[n] = _OFFSET_*i+j;
-        id[n] = ech[i][j];
-      }
-    }
-  }
-  *nw = n;
-
-  return ievent;
-}
-
-void  dump_clusters(int nw, int *ia, double *id, int ncl, int *lencl, int nadcgam, adcgam_t *adcgam) {
-
-  printf(" --- dump counters --- %11i\n",debug_ncalls);
-  for(int i = 1; i <= nw; ++i) {
-    printf("%3i %4i %6i\n", i, ia[i], (int)(1.e4*id[i]+0.5));
-  }
-  if(ncl) {
-    printf(" --- dump clusters --- %11i\n",debug_ncalls);
-    for(int i = 1; i <= ncl; ++i) {
-      printf("%3i %4i\n", i, lencl[i]);
-    }
-  }
-  if(nadcgam) {
-    printf(" --- dump adcgam --- %11i\n",debug_ncalls);
-    for(int i = 1; i <= nadcgam; ++i) {
-      printf("%3i %9.6lf %9.6lf %9.6lf %17.6lf %9.6lf %9.6lf %3i %3i %3i %3i\n", i,
-              adcgam[i].e, adcgam[i].x[1], adcgam[i].y[1], adcgam[i].chi2,
-              adcgam[i].x[0], adcgam[i].y[0], adcgam[i].size, adcgam[i].type, adcgam[i].stat, adcgam[i].id);
-    }
-  }
-  printf(" --- --- --- --- %11i\n",debug_ncalls);
-  return;
-}
-
-#ifdef ILRECO_BUILD_TEST_MAIN
-int main() {
-
-#if   CALOR_MATERIAL==LG_CALOR
-    char* profile_fname="prof_lg.dat";
-#elif CALOR_MATERIAL==PWO_CALOR
-    char* profile_fname="prof_pwo.dat";
-#else
-#error  Unknown calorimeter material
-#endif
-
-  read_profile_data(profile_fname);
-
-  int nadcgam, ncl, nw;               // number of particles, clusters and hits
-  int ia[_MADR_]; double id[_MADR_];  // arrays of adresses and energies
-  int lencl[_MCL_];                   // array of clusters lengths
-  adcgam_t adcgam[_MADCGAM_];         // final reconstructions storage
-
-  while((debug_ncalls = read_event(&nw,ia,id))<=1000000) {      // event loop
-    nadcgam = 0;                      // reset number of rec-d particles
-
-    ncl = cluster_search(nw,ia,id,lencl);         //  1st stage cluster processing
-    for(int icl = 1, ipncl = 1; icl <= ncl && nadcgam < _MADCGAM_-2; ipncl +=  lencl[icl++])
-      process_cluster(lencl[icl],&ia[ipncl-1],&id[ipncl-1],&nadcgam,adcgam);    //  2nd stage cluster processing
-
-    dump_clusters(nw,ia,id,ncl,lencl,nadcgam,adcgam);
-  }
-
-  return 0;
-}
-#endif /* ILRECO_BUILD_TEST_MAIN */
-
-//
-// initialize the random number generator
-//
-
-double ZBQLINI(int seed, double ZBQLIX[43+1]) {
-
-  static int init = 0;
-  if(init) {
-    if(init==1) printf("***WARNING**** You have called routine ZBQLINI more than once. Ignoring any subsequent calls.\n");
-    ++init;
-    exit(1);
-  } else  {init = 1;}
-
-  double B = 4.294967291e9;
-  if(!seed) seed = 1;
-
-  ZBQLIX[1] = fmod((double)seed,B);
-
-  for(int i = 1; i < 43; ++i) ZBQLIX[i+1] = fmod(ZBQLIX[i]*30269.,B);
-
-  return B;
-}
-
-
-//
-//  Returns a uniform random number between 0 & 1, using
-//  a Marsaglia-Zaman type subtract-with-borrow generator
-//
-
-double  ZBQLU01() {
-
-  static int init = 0;
-  static double  ZBQLIX[43+1], B;
-
-  if(!init) {
-    double  zz[43+1];
-    int iseed = 1;
-    B = ZBQLINI(iseed,zz);
-    memcpy(ZBQLIX,zz,sizeof(zz));
-    init = 1;
-  }
-
-  static int curpos = 1, id22 = 22, id43 = 43;
-  static double C = 0.;
-  double x, B2 = B, BINV = 1./B;
-
-  while(1) {
-    x = ZBQLIX[id22] - ZBQLIX[id43] - C;
-    if(x<0.) {x += B; C = 1.;} else {C = 0.;}
-    ZBQLIX[id43] = x;
-    --curpos; --id22; --id43;
-    if(!curpos) {
-      curpos = 43;
-    } else {
-      if(!id22) {id22 = 43;} else {if(!id43) id43 = 43;}
-    }
-    if(x<BINV) {B2 *= B;} else {break;}
-  }
-
-   return x/B2;
-}
-
-//
-//  Returns a random number uniformly distributed on (x1,x2)
-//  Even if x1 > x2, this will work as x2-x1 will then be -ve
-//
-double ZBQLUAB(double x1, double x2) {return x1+(x2-x1)*ZBQLU01();}
-
-int nint(double x) {
-  int n = (x<0.) ? -(int)(0.5-x) : (int)(0.5+x);
+/* round to nearest integer, halves away from zero */
+static int32_t nint(double x) {
+  int32_t n = (x<0.) ? -(int32_t)(0.5-x) : (int32_t)(0.5+x);
   return n;
 }

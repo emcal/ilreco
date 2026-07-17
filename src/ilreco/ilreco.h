@@ -2,108 +2,72 @@
 #define CALORIMETRY_STUDIES_ILRECO_H
 
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* ============================================================================
- * ilreco — island clustering for square-cell calorimeters
+ * ilreco — island-clustering reconstruction for square-cell calorimeters.
  *
- * Two APIs live here:
- *
- *   1. The CONTEXT API (ilreco_config / ilreco_workspace) — use this.
- *      - geometry and tunables are runtime configuration
- *      - all memory is allocated ONCE (config: shared, immutable after create;
- *        workspace: one per thread); event processing allocates nothing
- *      - thread-safe by construction: any number of threads may share one
- *        const config, each with its own workspace
- *      - 0-based cell indexing, errors returned (never exit())
- *
- *   2. The LEGACY API (cluster_search/process_cluster/read_profile_data) —
- *      the original 1-based, macro-configured, single-threaded interface,
- *      kept source- and behavior-compatible (including its quirks; see
- *      tests/KNOWN_ISSUES.md). It runs on an internal default context sized
- *      by the compile-time macros below. New code should not use it.
- * ==========================================================================*/
-
-/* ---- compile-time defaults (legacy API geometry; also new-API defaults) --- */
-#define _MADR0_   10000       /* number of calorimeter modules                */
-#define _MADR_OFFSET_ 800     /* number of calorimeter modules safety offset  */
-#define _MADR_    (_MADR0_+_MADR_OFFSET_)
-#define _MCL_       200       /* max number+1 of raw clusters                 */
-#define _MADCGAM_   200       /* max number+1 of reconstructed "particles"    */
-#define _NCOL_       34       /* legacy grid columns                          */
-#define _NROW_       34       /* legacy grid rows                             */
-#define _OFFSET_    100       /* legacy column stride in packed addresses     */
-#define _MAXLEN_    100       /* max hits stored per reconstructed object     */
-
-#define _MPK_        12       /* max number of peaks in raw cluster           */
-
-#define _N_REC_METHODS_ 5     /* number of coord. reconstruction methods      */
-#define MIN_COUNTER_ENERGY  1.e-3   /* NOTE: used only by the test generator  */
-#define CLUSTER_MIN_ENERGY  0.1     /* NOTE: historical, not used anywhere    */
-#define _ZCAL_      732.      /* target-to-calorimeter distance (two-gamma
-                                 separation mass cut); config field in the
-                                 context API                                  */
-
-#define PWO_CALOR 1
-#define LG_CALOR  2
-#ifndef CALOR_MATERIAL
-#define CALOR_MATERIAL PWO_CALOR
-#endif
-
-#define _N_PROFILE_POINTS_  500 /* number of 2d profile nods                  */
-
-/* ---- reconstructed object, shared by both APIs (layout unchanged) -------- */
-typedef struct {
-    double e;
-    double x[_N_REC_METHODS_];
-    double y[_N_REC_METHODS_];
-    double z[_N_REC_METHODS_];
-    double chi2;
-    int    size;              /* number of hits                               */
-    int    type;              /* fiducial-region classification (+10 if split)*/
-    int      id;              /* reconstruction-path tag                      */
-    int    stat;              /* status of cluster                            */
-    int    element[_MAXLEN_]; /* hit addresses (legacy packed; slots 1..)     */
-    double elfract[_MAXLEN_]; /* hit weights — units differ by path, see
-                                 tests/KNOWN_ISSUES.md                        */
-} adcgam_t;
-
-/* ==========================================================================
- * CONTEXT API
+ * Usage model:
+ *   - geometry and tunables are runtime configuration
+ *   - all memory is allocated ONCE (config: shared, immutable after create;
+ *     workspace: one per thread); event processing allocates nothing
+ *   - thread-safe by construction: any number of threads may share one
+ *     const config, each with its own workspace
+ *   - 0-based cell indexing, errors returned (never exit())
+ * See README.md for a step-by-step tutorial.
  * ==========================================================================*/
 
 typedef struct ilreco_config    ilreco_config;    /* opaque, immutable, shared */
 typedef struct ilreco_workspace ilreco_workspace; /* opaque, one per thread    */
 
 typedef struct {
-    int    col;   /* 0-based column, 0 .. n_cols-1 */
-    int    row;   /* 0-based row,    0 .. n_rows-1 */
-    double e;     /* GeV */
+    int32_t col;   /* 0-based column, 0 .. n_cols-1 */
+    int32_t row;   /* 0-based row,    0 .. n_rows-1 */
+    double  e;     /* GeV */
 } ilreco_hit;
 
 typedef struct {
-    double e;         /* GeV (profile containment correction applied)         */
-    double x, y;      /* 0-based cell units: x == col means center of col     */
-    double chi2;
-    int    size;      /* number of hits in the cluster                        */
-    int    type;      /* fiducial classification (0 inside, 2 boundary, ...)  */
+    double  e;        /* GeV (profile containment correction applied)         */
+    double  x;        /* 0-based cell units: x == col means center of col     */
+    double  y;        /* 0-based cell units: y == row means center of row     */
+    double  chi2;     /* profile-fit chi2 / ndof                              */
+    int32_t size;     /* number of hits in the cluster                        */
+    int32_t type;     /* fiducial classification: 0 interior, 1 hole border,
+                         2 outer boundary; +10 if a split gamma pair          */
 } ilreco_cluster;
 
 /* Create the shared configuration: geometry + shower-profile tables + tunables.
  * Allocates everything the config will ever need; immutable afterwards.
+ *   n_cols, n_rows   grid size in cells
+ *   profile_path     shower-profile table file (see README, "The shower
+ *                    profile (weights) file")
+ *   errbuf, errbuf_len   optional: receives the failure message
  * Returns NULL on failure with a message in errbuf (if given). */
-ilreco_config *ilreco_config_create(int n_cols, int n_rows,
+ilreco_config *ilreco_config_create(int32_t n_cols, int32_t n_rows,
                                     const char *profile_path,
                                     char *errbuf, size_t errbuf_len);
 void ilreco_config_destroy(ilreco_config *cfg);
 
 /* Optional tuning — call before the config is shared across threads. */
+
+/* Target-to-calorimeter distance [cm]; enters the two-gamma invariant-mass
+ * cut that decides whether a chi2-improving split is physical (default 732,
+ * PrimEx). */
 void ilreco_config_set_zcal(ilreco_config *cfg, double zcal);
+
+/* Cluster-seed threshold [GeV] (default 0.01): a cluster is reconstructed
+ * only if one cell exceeds it (scaled up with cluster energy; see README
+ * pitfall 1). */
 void ilreco_config_set_seed_threshold(ilreco_config *cfg, double min_seed_gev);
-void ilreco_config_set_hole_classification(ilreco_config *cfg, int enabled);
+
+/* Enable/disable the built-in central-2x2-beam-hole labeling (type = 1;
+ * default enabled). Labels only — energies and positions are never
+ * affected. Ignored when a cell mask is set. */
+void ilreco_config_set_hole_classification(ilreco_config *cfg, int32_t enabled);
 
 /* Cell-existence mask for non-rectangular shapes (circular calorimeters,
  * asymmetric beam holes, dead regions). mask[row*n_cols + col] != 0 means the
@@ -113,34 +77,26 @@ void ilreco_config_set_hole_classification(ilreco_config *cfg, int enabled);
  *     (energy lost into a hole is corrected UP, not treated as measured-zero);
  *   - cluster `type` is derived from the mask: 1 = seed has a missing in-grid
  *     neighbor (hole border / rim), 2 = seed on the bounding-box ring, 0 =
- *     fully surrounded. The built-in HyCal hole pattern is ignored when a
+ *     fully surrounded. The built-in central-hole pattern is ignored when a
  *     mask is set;
  *   - hits on masked-out cells are rejected by ilreco_reconstruct (-1).
  * Returns 0 on success, -1 on invalid input. */
-int ilreco_config_set_cell_mask(ilreco_config *cfg, const unsigned char *mask);
+int32_t ilreco_config_set_cell_mask(ilreco_config *cfg, const unsigned char *mask);
 
 /* Per-thread workspace: ONE allocation (internal arena), reused for every
  * event. Never share a workspace between threads. */
 ilreco_workspace *ilreco_workspace_create(const ilreco_config *cfg);
 void ilreco_workspace_destroy(ilreco_workspace *ws);
 
-/* Reconstruct one event. Zero allocations. Returns the number of clusters
- * found (may exceed max_out; out receives at most max_out, energy-descending),
- * or -1 on invalid input (hit outside the grid, negative n_hits, ...). */
-int ilreco_reconstruct(const ilreco_config *cfg, ilreco_workspace *ws,
-                       const ilreco_hit *hits, int n_hits,
-                       ilreco_cluster *out, int max_out);
-
-/* ==========================================================================
- * LEGACY API — original interface, unchanged semantics (single-threaded;
- * grid fixed to _NCOL_ x _NROW_; addresses = col*_OFFSET_+row, 1-based;
- * arrays used from index 1).
- * ==========================================================================*/
-void  read_profile_data(const char* prof_file_name);
-int  cluster_search(int nw, int *ia, double *id, int *lencl);
-void process_cluster(int nadc, int *ia, double *id, int *nadcgam, adcgam_t *adcgam);
-int  read_event(int *nw, int *ia, double *id);
-void dump_clusters(int nw, int *ia, double *id, int ncl, int *lencl, int nadcgam, adcgam_t *adcgam);
+/* Reconstruct one event. Zero allocations.
+ *   hits, n_hits   fired cells, any order, one entry per cell
+ *   out, max_out   receives up to max_out clusters, energy-descending
+ * Returns the number of clusters found (may exceed max_out), or -1 on
+ * invalid input (hit outside the grid or on a masked-out cell, negative
+ * n_hits, ...). */
+int32_t ilreco_reconstruct(const ilreco_config *cfg, ilreco_workspace *ws,
+                           const ilreco_hit *hits, int32_t n_hits,
+                           ilreco_cluster *out, int32_t max_out);
 
 #ifdef __cplusplus
 }

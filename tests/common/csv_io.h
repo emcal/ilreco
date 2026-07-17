@@ -1,7 +1,11 @@
-// Minimal CSV I/O for the golden-table format shared by tests/data and
-// tests/tools. Formats:
-//   input:    event,col,row,e            (1-based col/row, e in GeV)
-//   expected: event,icl,ncl,e,x,y,chi2,size   (icl = 0.. by descending e)
+// CSV I/O for the golden-table format shared by tests/data and tests/tools.
+//
+// File formats (FROZEN — the fixtures predate the 0-based API and keep the
+// historical 1-based columns/rows/positions; conversion to the library's
+// 0-based convention happens here, at the file boundary, and nowhere else):
+//   input:    event,col,row,e                 (col/row 1-based, e in GeV)
+//   expected: event,icl,ncl,e,x,y,chi2,size   (x/y 1-based cell units,
+//                                              icl = 0.. by descending e)
 #ifndef ILRECO_TEST_CSV_IO_H
 #define ILRECO_TEST_CSV_IO_H
 
@@ -14,58 +18,63 @@
 
 namespace ilt {
 
-inline std::map<long, std::vector<Hit>> read_input_csv(const std::string& path) {
-    std::map<long, std::vector<Hit>> events;
-    FILE* f = std::fopen(path.c_str(), "r");
-    if (!f) return events;
+inline std::map<long, std::vector<ilreco_hit>> read_input_csv(const std::string& path) {
+    std::map<long, std::vector<ilreco_hit>> events;
+    FILE* file = std::fopen(path.c_str(), "r");
+    if (!file) return events;
     char line[256];
-    if (!std::fgets(line, sizeof line, f)) { std::fclose(f); return events; }  // header
-    long evt; int col, row; double e;
-    while (std::fgets(line, sizeof line, f))
-        if (std::sscanf(line, "%ld,%d,%d,%lf", &evt, &col, &row, &e) == 4)
-            events[evt].push_back({col, row, e});
-    std::fclose(f);
+    if (!std::fgets(line, sizeof line, file)) { std::fclose(file); return events; }  // header
+    long event;
+    int col, row;
+    double energy;
+    while (std::fgets(line, sizeof line, file))
+        if (std::sscanf(line, "%ld,%d,%d,%lf", &event, &col, &row, &energy) == 4)
+            events[event].push_back({col - 1, row - 1, energy});  // file is 1-based
+    std::fclose(file);
     return events;
 }
 
-struct GoldenRow {
-    int ncl;
-    std::vector<Cluster> clusters;
+struct GoldenEvent {
+    int n_clusters;
+    std::vector<ilreco_cluster> clusters;   // positions already 0-based
 };
 
-inline std::map<long, GoldenRow> read_expected_csv(const std::string& path) {
-    std::map<long, GoldenRow> events;
-    FILE* f = std::fopen(path.c_str(), "r");
-    if (!f) return events;
+inline std::map<long, GoldenEvent> read_expected_csv(const std::string& path) {
+    std::map<long, GoldenEvent> events;
+    FILE* file = std::fopen(path.c_str(), "r");
+    if (!file) return events;
     char line[256];
-    if (!std::fgets(line, sizeof line, f)) { std::fclose(f); return events; }
-    long evt; int icl, ncl, size; double e, x, y, chi2;
-    while (std::fgets(line, sizeof line, f)) {
-        if (std::sscanf(line, "%ld,%d,%d,%lf,%lf,%lf,%lf,%d",
-                        &evt, &icl, &ncl, &e, &x, &y, &chi2, &size) == 8) {
-            events[evt].ncl = ncl;
-            if (icl >= 0) events[evt].clusters.push_back({e, x, y, chi2, size});
+    if (!std::fgets(line, sizeof line, file)) { std::fclose(file); return events; }
+    long event;
+    int cluster_index, n_clusters, size;
+    double e, x, y, chi2;
+    while (std::fgets(line, sizeof line, file)) {
+        if (std::sscanf(line, "%ld,%d,%d,%lf,%lf,%lf,%lf,%d", &event,
+                        &cluster_index, &n_clusters, &e, &x, &y, &chi2, &size) == 8) {
+            events[event].n_clusters = n_clusters;
+            if (cluster_index >= 0)   // file positions are 1-based; -1.0 is exact
+                events[event].clusters.push_back({e, x - 1.0, y - 1.0, chi2, size, 0});
         }
     }
-    std::fclose(f);
+    std::fclose(file);
     return events;
 }
 
 inline void write_expected_csv(const std::string& path,
-                               const std::map<long, std::vector<Cluster>>& results) {
-    FILE* f = std::fopen(path.c_str(), "w");
-    std::fprintf(f, "event,icl,ncl,e,x,y,chi2,size\n");
-    for (const auto& [evt, cls] : results) {
-        if (cls.empty()) {
-            std::fprintf(f, "%ld,-1,0,0,0,0,0,0\n", evt);
+                               const std::map<long, std::vector<ilreco_cluster>>& results) {
+    FILE* file = std::fopen(path.c_str(), "w");
+    std::fprintf(file, "event,icl,ncl,e,x,y,chi2,size\n");
+    for (const auto& [event, clusters] : results) {
+        if (clusters.empty()) {
+            std::fprintf(file, "%ld,-1,0,0,0,0,0,0\n", event);
             continue;
         }
-        for (size_t i = 0; i < cls.size(); ++i)
-            std::fprintf(f, "%ld,%zu,%zu,%.9g,%.9g,%.9g,%.9g,%d\n", evt, i,
-                         cls.size(), cls[i].e, cls[i].x, cls[i].y, cls[i].chi2,
-                         cls[i].size);
+        for (size_t i = 0; i < clusters.size(); ++i)   // +1.0 back to the file convention
+            std::fprintf(file, "%ld,%zu,%zu,%.9g,%.9g,%.9g,%.9g,%d\n", event, i,
+                         clusters.size(), clusters[i].e, clusters[i].x + 1.0,
+                         clusters[i].y + 1.0, clusters[i].chi2, clusters[i].size);
     }
-    std::fclose(f);
+    std::fclose(file);
 }
 
 }  // namespace ilt

@@ -51,11 +51,10 @@ cd build && ctest                            # unit / smoke / golden-data / benc
 
 ## Tutorial: an 8×8 calorimeter with a central 2×2 beam hole
 
-A worked example, end to end, with real numbers. The detector: an 8×8 crystal
-array with the central 2×2 block removed for the beam (the classical hole
-layout — HyCal's own). The event: three photons, landing on a hole-border
-cell, a normal interior cell, and an outer-edge cell — so every cell class
-appears, each with its own cluster in the output.
+Step-by-step example. The detector: an 8×8 crystal array with the central
+2×2 block removed for the beam (the classic layout). The event: three photons,
+landing on a hole-border cell, a normal interior cell, and an outer-edge
+cell — every cell class appears, each with its own cluster in the output.
 
 ![tutorial event](docs/tutorial-8x8.png)
 
@@ -81,13 +80,13 @@ You do **not** register any of this explicitly:
 - **Outer edge** — the boundary ring (col 0/7, row 0/7): no phantom neighbors
   are assumed beyond it; a cluster *seeded* there gets `type = 2`.
 - **Hole border** — the 12 cells surrounding the central 2×2: seeds there get
-  **`type = 1`**, automatically. The built-in classification encodes exactly
-  this layout (a central 2×2 hole), so for this detector you leave it on.
+  **`type = 1`**, automatically. The built-in classification encodes this
+  layout (a central 2×2 hole), so for this detector you leave it on.
   For a hole of any *other* shape or position, the built-in labels will not
   match — disable them with `ilreco_config_set_hole_classification(cfg, 0)`
   and track hole adjacency in your analysis (labels only; energies and
   positions are never affected by classification).
-- **The hole itself is simply four cells you never feed.** (3,3), (4,3),
+- **The hole is four cells you never feed.** (3,3), (4,3),
   (3,4), (4,4) exist in the geometry but no hit ever arrives for them, so
   clustering treats them as silent (zero-signal) neighbors — like dead
   channels. Energy deposited there is physically lost; the profile-based
@@ -107,9 +106,9 @@ section).
 ### Step 4 — put the event into the input array
 
 Each fired cell becomes one `{col, row, energy}` entry — 0-based indices, GeV,
-one entry per fired cell, **no entries for the hole**. The array goes in **raw
-DAQ order**: you do not sort it and you do not mark seeds — the library orders
-hits internally and finds peak (seed) cells itself:
+**no entries for the hole**. The array goes in **raw DAQ order**: you do not
+sort it and you do not mark seeds — the library orders hits internally and
+finds peak (seed) cells itself:
 
 ```c
 ilreco_hit hits[15] = {
@@ -129,10 +128,10 @@ only sees indices, and the row↔physical-y mapping is yours.)
 
 ### Step 5 — interpret the output
 
-Running exactly the above gives `n = 3`; clusters arrive energy-descending,
+Running the above gives `n = 3`; clusters arrive energy-descending,
 and this event yields one of each type:
 
-| | `e` [GeV] | `x`, `y` [cells] | `chi2` | `size` | `type` | reading |
+| | `e` [GeV] | `x`, `y` [cells] | `chi2` | `size` | `type` | interpretation |
 |---|---|---|---|---|---|---|
 | `out[0]` (A, blue) | **1.4239** | 5.278, 4.047 | 1.38 | 6 | **1** | seeded on the **hole border** — labeled automatically; E above the 1.405 GeV input sum (containment correction includes what leaked into the silent hole); position pushed away from the hole (right of seed col 5) |
 | `out[1]` (B, green) | **1.1789** | 1.949, 1.051 | 1.79 | 5 | **0** | **normal** interior shower |
@@ -150,8 +149,7 @@ The return value `n` is the number of clusters found (it can exceed `max_out`;
 for (int i = 0; i < n && i < 8; ++i) { /* ... out[i] ... */ }
 ```
 
-What `n` means physically — three regimes, all with real numbers from this
-same 8×8:
+What `n` means physically — three regimes, on the same 8×8:
 
 1. **Well-separated showers** (≥1 empty cell between them, like the tutorial
    event): distinct islands → one clean cluster each, nothing shared.
@@ -160,13 +158,13 @@ same 8×8:
    local maxima and profile-fits both:
    `n = 2`, `E = 1.453 / 1.303`, `x = 1.012 / 2.957` — and **both report
    `size = 7`**: every cell of the island belongs to both clusters, its
-   energy *shared* between them according to the shower profile. Do not
-   expect cluster sizes to add up to the hit count in this regime.
+   energy *shared* between them according to the shower profile. Cluster
+   sizes do not add up to the hit count in this regime.
 3. **Genuinely merged** (maxima on adjacent cells, 1.00 and 0.95 GeV side by
    side): one maximum survives → `n = 1`, `E = 2.402` (the pair summed), and
-   the tell-tale is **`chi2 = 10.5`** against ~0.5–2 for a clean single
-   shower. A one-cell separation is below the method's resolving power; cut
-   on `chi2` to flag such candidates instead of trusting them.
+   **`chi2 = 10.5`** against ~0.5–2 for a clean single shower. A one-cell
+   separation is below the method's resolving power; cut on `chi2` to flag
+   such candidates.
 
 Note: `size` caps at 100 cells per cluster (`_MAXLEN_`), and cluster counting
 saturates at the configured maximum (~200/event) — both far above physical
@@ -182,12 +180,12 @@ occupancies for these detectors.
 - Clusters are returned **energy-descending**; the return value is the total
   found (may exceed `max_out`).
 - `cluster.type`: 0 = interior, 2 = outer-ring cell seeded, 1 = central
-  beam-hole region (HyCal legacy — disable with
+  beam-hole region (disable with
   `ilreco_config_set_hole_classification(cfg, 0)` if your detector has no hole).
 
-## Multithreading — how to run it right
+## Multithreading
 
-The design rule is simple: **one shared `const` config, one workspace per thread.**
+**One shared `const` config, one workspace per thread.**
 
 ```c
 ilreco_config *cfg = ilreco_config_create(...);   /* main thread, once */
@@ -206,13 +204,13 @@ ilreco_workspace_destroy(ws);
   do NOT create/destroy per event.
 - Verified by the test suite: 4 threads × 200 events reproduce the serial
   results **bitwise** (`tests/unit/test_context_api.cpp`, tag `[threads]`).
-- The legacy API (below) is NOT thread-safe — it runs on one hidden context.
 
-## Arbitrary shapes: circular calorimeters, asymmetric holes (e.g. EIC B0)
+## Arbitrary shapes: the cell-existence mask
 
-Any detector that is a **subset of a rectangular grid** is supported via the
-cell-existence mask. Take the bounding box of your crystal layout, mark which
-cells physically exist, and reconstruct as usual:
+Any detector that is a **subset of a rectangular grid** — a circular
+calorimeter, an asymmetric beam-pipe hole (e.g. the EIC B0 EMCal) — is
+supported via the cell-existence mask. Take the bounding box of your crystal
+layout, mark which cells physically exist, and reconstruct as usual:
 
 ```c
 /* EIC-B0-style: circular-ish array with an off-center beam-pipe hole */
@@ -234,7 +232,7 @@ What the mask changes:
   cluster hugging a hole is slightly under-corrected.
 - **Labels**: `type` is derived from the mask — `1` = seed has a missing
   in-grid neighbor (hole border or rim), `2` = seed on the bounding-box ring,
-  `0` = fully surrounded. The built-in HyCal hole pattern is ignored when a
+  `0` = fully surrounded. The built-in central-hole pattern is ignored when a
   mask is set.
 - **Validation**: hits on masked-out cells are rejected (`-1`) — feeding a
   nonexistent cell is a caller bug, not an event.
@@ -244,10 +242,10 @@ the golden tables), so masks are purely opt-in.
 
 ## The shower profile ("weights") file
 
-The `.dat` file passed to `ilreco_config_create` is the physics heart of the
-library: the **transverse shower profile** of your calorimeter. Everything —
-energy sharing between overlapping showers, the containment correction, the
-chi2 position fit — is computed against it.
+The `.dat` file passed to `ilreco_config_create` is the **transverse shower
+profile** of your calorimeter. Energy sharing between overlapping showers,
+the containment correction, and the chi2 position fit are all computed
+against it.
 
 **What it contains.** For a shower axis at transverse offset `(dx, dy)` from a
 cell center (in **cell units**), the table gives the *mean fraction* of the
@@ -269,13 +267,13 @@ i  j  amean  ad2c
 - `amean` = mean energy fraction in the cell at that offset.
 - `ad2c` = variance of that fraction (drives `sigma2` in the chi2).
 
-**When you must generate your own.** The offsets are in *cell units*, so the
+**When to generate your own.** The offsets are in *cell units*, so the
 table encodes the ratio of cell size to the Moliere radius, the material, and
 the longitudinal averaging of the setup it was made for. Regenerate when any
 of these changes:
 
 - different **cell size / pitch** relative to the Moliere radius (the shipped
-  `prof_pwo.dat` is for 2.05 cm PbWO4 cells, `prof_lg.dat` for HyCal lead
+  `prof_pwo.dat` is for 2.05 cm PbWO4 cells, `prof_lg.dat` for lead
   glass) — even the same material with a different crystal width needs a new
   table;
 - different **material** (X0, R_M);
@@ -307,14 +305,14 @@ own validation) is maintained with the simulation package:
 `scripts/770_generate_profile.py` — it also overlays the generated table
 against the shipped one as a sanity check.
 
-## Pitfalls (read before wiring it in)
+## Pitfalls
 
 1. **~10 MeV cluster-seed threshold.** A cluster is only reconstructed if one
    cell exceeds `min_seed` (default 0.01 GeV, historically hardcoded), scaled up
    by `7·log(1+E_cluster)` for ≥3-cell clusters. Isolated deposits below it
    vanish silently. Tune with `ilreco_config_set_seed_threshold()`.
 2. **Apply your own hit threshold upstream.** The library clusters whatever you
-   feed it; `MIN_COUNTER_ENERGY` in the header is *not* enforced.
+   feed it — there is no built-in per-hit energy cut.
 3. **Merge duplicate cells upstream.** Feeding the same `(col,row)` twice is
    undefined (survives, but the output is unspecified).
 4. **Two-gamma mass cut depends on geometry.** The second-shower acceptance
@@ -335,14 +333,6 @@ against the shipped one as a sanity check.
    showers (~39 µs vs ~3.8 ms on a 2020s CPU; see `tests/benchmark/baseline.json`).
    Budget accordingly or pre-split regions upstream.
 
-## Legacy API
-
-The original interface (`read_profile_data` / `cluster_search` /
-`process_cluster`, 1-based packed addresses `col*100+row`, fixed 34×34 grid,
-single-threaded) still works unchanged on an internal default context — existing
-callers compile and produce **bit-identical** results (enforced by the golden
-tables in `tests/data/`). New code should use the context API.
-
 ## Testing & validation
 
 See `tests/README.md`: contract unit tests, smoke sweeps, golden event-by-event
@@ -350,5 +340,5 @@ regression tables frozen from Geant4-simulated detector data, speed benchmark
 with a committed baseline, CI (build+ctest, sanitizers, static analysis), plus
 an end-to-end simulation→reconstruction physics regression maintained with the
 simulation package. Known quirks and their history: `tests/KNOWN_ISSUES.md`.
-The 2026 context-API modernization was validated by byte-identical
-reconstruction of 33 simulated datasets before/after the change.
+Every restructuring of this library is validated by byte-identical
+reconstruction of the golden tables and of 33 simulated datasets.

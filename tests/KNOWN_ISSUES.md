@@ -53,3 +53,65 @@ New notes:
   unpacked through the pipeline (planned for the 0-based internal refactor).
 - The legacy API's hidden context is created on first use and intentionally
   never freed (process-lifetime); LeakSanitizer treats it as still-reachable.
+
+## Re-scan of the rewritten code (2026-07-17)
+
+Fresh review of post-refactor ilreco.c (manual line-by-line; CI carries
+cppcheck/clang-tidy; ASan/UBSan clean; all 4 ctest suites green). New findings,
+none affecting physics output — documented, not fixed:
+
+11. **`ilreco_reconstruct` does not validate `out`/`max_out`**: `out == NULL`
+    with `max_out > 0` crashes; `max_out < 0` is accepted and returns nadcgam
+    with nothing written (caller may read uninitialized memory). Hits pointer
+    and geometry ARE validated.
+12. **Inconsistent NULL handling in setters**: `ilreco_config_set_cell_mask`
+    checks `cfg` for NULL and returns -1; `set_zcal` / `set_seed_threshold` /
+    `set_hole_classification` dereference without checking.
+13. **The library prints to stdout on internal conditions** (preserved from
+    the original): "maximum number of clusters reached" (cluster_search also
+    silently truncates to mcl-1), "WRN: lost maximum", "WARNING NEGATIVE CORR",
+    "case 0 ch". A drop-in library should report via counters/return codes.
+14. ~~`order[_MADCGAM_]` fixed-size local in `ilreco_reconstruct`~~ FIXED
+    2026-07-17: moved into the workspace arena, sized by cfg->madcgam (golden
+    tables unchanged). The `ipnpk/epk/xpk/ypk/fw[_MPK_]` locals stay on the
+    stack deliberately: _MPK_ is an algorithm constant (max peaks per island,
+    bounded by the npk break at _MPK_-2, verified), not geometry.
+15. **Exported non-static helper symbols pollute the namespace**: `nint`,
+    `ZBQLINI`, `ZBQLU01`, `ZBQLUAB`, `read_event`, `dump_clusters` — link-time
+    collision risk for a drop-in library (should be static or prefixed).
+16. **Packed-address `int` overflow for absurd grids**: `(col+1)*offset` can
+    exceed INT_MAX around ~46000x46000 cells — theoretical, no guard.
+17. Cosmetic, preserved: `chisq1_cluser` (typo in name), "does not exists" in
+    the legacy error message; `read_profile_data` reports an unreadable file
+    twice (access() check + ensure_legacy).
+
+## Legacy removal (2026-07-17)
+
+The legacy API (read_profile_data / cluster_search / process_cluster), the
+built-in test event generator (read_event, ZBQL* random generator,
+dump_clusters, the opt-in main()), the src/test/ilreco_dump tool, and the
+legacy compile-time geometry macros were REMOVED — the context API is the
+only interface. adcgam_t is now internal to ilreco.c. Interface and stored
+integer types are exact-width (int32_t). Validation: full ctest green
+(golden tables replay through the 0-based driver), ASan/UBSan clean, and the
+cal-fpga snapshot protocol reports the rebuilt chain byte-identical to the
+pre-removal snapshot (33 reco files, 14 number sets).
+
+Status effect on the list above: #1 (main in library), #3 (CLUSTER_MIN_ENERGY)
+and #4 (MIN_COUNTER_ENERGY) are gone with the removed code; #15 is resolved
+(ZBQL*/read_event/dump_clusters removed, nint static); #12/#13 from the
+re-scan and #2 (elfract units, now internal-only) remain open. The default
+peak budget (madr0) is now 100*n_cols*n_rows — far above any physical
+occupancy, equivalent on all validated data; the guard binds only for
+pathological >= _MPK_-2-peak islands.
+
+## Stage-3 note (cell-existence mask, 2026-07-16)
+
+Without a mask, cells beyond a physical rim or inside a beam hole (any cell
+that exists in the grid but never fires) are treated as measured-zero
+neighbors: they enter fill_zero_hits and the chi2 as real measurements, so
+clusters hugging a hole/rim are slightly under-corrected. This behavior is
+kept bit-identical (golden tables) as the default. With
+`ilreco_config_set_cell_mask` the missing cells are excluded from the
+zero-neighbor treatment and the chi2, `type` labels derive from the mask, and
+hits on nonexistent cells are rejected — see unit/test_cell_mask.cpp.

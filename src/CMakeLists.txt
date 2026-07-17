@@ -13,6 +13,6 @@ else()
 endif()
 
 add_subdirectory(ilreco)
-add_subdirectory(test)
+
 
 
