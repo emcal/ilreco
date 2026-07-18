@@ -4,6 +4,7 @@
 [![sanitizers + static-analysis + tests](https://github.com/emcal/ilreco/actions/workflows/ci.yml/badge.svg)](https://github.com/emcal/ilreco/actions/workflows/ci.yml)
 [![docs](https://github.com/emcal/ilreco/actions/workflows/docs.yml/badge.svg)](https://github.com/emcal/ilreco/actions/workflows/docs.yml)
 
+[== DOCUMENTATION ==](https://emcal.github.io/ilreco/) 
 
 Island-clustering reconstruction for square-cell calorimeters (e.g. PbWO4 / lead
 glass): connected-region search, peak finding, measured-shower-profile energy
@@ -42,8 +43,7 @@ cell — every cell class appears, each with its own cluster in the output.
 
 ## Code example 
 
-For C++, mt, and other examples read 
-[== DOCUMENTATION ==](https://emcal.github.io/ilreco/)
+For C++, mt, and other examples read [DOCUMENTATION](https://emcal.github.io/ilreco/)
 
 ```c
 #include <ilreco.h>
