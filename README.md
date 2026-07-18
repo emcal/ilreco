@@ -27,9 +27,23 @@ change to this library.*
 
 [== DOCUMENTATION ==](https://emcal.github.io/ilreco/) 
 
-Install (pip / plain C / CMake), tutorial, threading and memory model, Python API, shower profiles...
+Install (pip / plain C / CMake), tutorial, threading and memory model (for C/C++), Python API, shower profiles...
 
-## Quick start
+
+
+## Example: an 8×8 calorimeter with a central 2×2 beam hole
+
+To give you a glimplse. The detector: an 8×8 crystal array with the central
+2×2 block removed for the beam (the classic layout). The event: three photons,
+landing on a hole-border cell, a normal interior cell, and an outer-edge
+cell — every cell class appears, each with its own cluster in the output.
+
+![tutorial event](docs/tutorial-8x8.png)
+
+## Code example 
+
+For C++, mt, and other examples read 
+[== DOCUMENTATION ==](https://emcal.github.io/ilreco/)
 
 ```c
 #include <ilreco.h>
@@ -69,15 +83,6 @@ Build:
 cmake -B build && cmake --build build -j     # library + test suite
 cd build && ctest                            # unit / smoke / golden-data / benchmark
 ```
-
-## Example: an 8×8 calorimeter with a central 2×2 beam hole
-
-Step-by-step example. The detector: an 8×8 crystal array with the central
-2×2 block removed for the beam (the classic layout). The event: three photons,
-landing on a hole-border cell, a normal interior cell, and an outer-edge
-cell — every cell class appears, each with its own cluster in the output.
-
-![tutorial event](docs/tutorial-8x8.png)
 
 
 [== DOCUMENTATION ==](https://emcal.github.io/ilreco/)
