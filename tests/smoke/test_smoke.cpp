@@ -1,6 +1,9 @@
 // Smoke sweeps: large volumes of generated inputs, asserting only the coarse
 // health contract — no crash, finite outputs, positions on the grid. This is
 // the first net that catches memory corruption after a refactor.
+//
+// Shared helpers (ilt::run_event, TestContext, synth_shower, Rng) come from
+// common/ilreco_test_utils.h; infrastructure map: tests/README.md.
 
 #include <catch2/catch_test_macros.hpp>
 

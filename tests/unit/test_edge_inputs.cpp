@@ -1,6 +1,9 @@
 // Edge-input behavior. Some of these document CURRENT behavior rather than a
 // designed contract (marked [documented]); if a future change alters them,
 // that may be intentional — check KNOWN_ISSUES.md before "fixing" the test.
+//
+// Shared helpers (ilt::run_event, TestContext, synth_shower, Rng) come from
+// common/ilreco_test_utils.h; infrastructure map: tests/README.md.
 
 #include <catch2/catch_test_macros.hpp>
 

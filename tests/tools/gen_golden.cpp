@@ -4,6 +4,9 @@
 // regenerated tables together with the change that caused them.
 //
 //   ilreco_gen_golden input_central.csv expected_central.csv
+//
+// Golden CSV I/O comes from common/csv_io.h (which converts the 1-based file
+// format to the 0-based API); infrastructure map: tests/README.md.
 
 #include <cstdio>
 #include <map>

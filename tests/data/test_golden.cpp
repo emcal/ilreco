@@ -4,6 +4,9 @@
 // data (see tests/README.md for provenance); tolerances absorb FP noise
 // across compilers, nothing more. A mismatch here means the physics output
 // changed — that is the point of this suite.
+//
+// Golden CSV I/O comes from common/csv_io.h (which converts the 1-based file
+// format to the 0-based API); infrastructure map: tests/README.md.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>

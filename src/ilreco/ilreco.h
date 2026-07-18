@@ -84,17 +84,19 @@ void ilreco_config_set_hole_classification(ilreco_config *cfg, int32_t enabled);
 int32_t ilreco_config_set_cell_mask(ilreco_config *cfg, const unsigned char *mask);
 
 /* Per-thread workspace: ONE allocation (internal arena), reused for every
- * event. Never share a workspace between threads. */
+ * event. The workspace keeps a reference to cfg — after this call the config
+ * is only needed to spawn further workspaces, and it must outlive every
+ * workspace created from it. Never share a workspace between threads. */
 ilreco_workspace *ilreco_workspace_create(const ilreco_config *cfg);
 void ilreco_workspace_destroy(ilreco_workspace *ws);
 
-/* Reconstruct one event. Zero allocations.
+/* Reconstruct one event on the workspace's calorimeter. Zero allocations.
  *   hits, n_hits   fired cells, any order, one entry per cell
  *   out, max_out   receives up to max_out clusters, energy-descending
  * Returns the number of clusters found (may exceed max_out), or -1 on
  * invalid input (hit outside the grid or on a masked-out cell, negative
  * n_hits, ...). */
-int32_t ilreco_reconstruct(const ilreco_config *cfg, ilreco_workspace *ws,
+int32_t ilreco_reconstruct(ilreco_workspace *ws,
                            const ilreco_hit *hits, int32_t n_hits,
                            ilreco_cluster *out, int32_t max_out);
 

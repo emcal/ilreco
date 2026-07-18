@@ -1,9 +1,15 @@
-// Shared helpers for the ilreco test suite.
+// Shared helpers for the ilreco test suite — the ONLY place test
+// infrastructure is defined (see tests/README.md, "Infrastructure map").
 //
 // Everything here speaks the library's own conventions (see ilreco.h):
 // 0-based (col, row) cell indices, energies in GeV, cluster positions in
 // 0-based cell units. Most tests run on one shared GRID_COLS x GRID_ROWS
 // context — the golden fixtures in tests/data were recorded on that grid.
+//
+// ILRECO_PROF_PWO (used below) is a compile definition set in
+// tests/CMakeLists.txt: the absolute path of the shipped shower-profile
+// file data/prof_pwo.dat. Its sibling ILRECO_TEST_DATA (used by the golden
+// tests) is the absolute path of the fixture directory tests/data.
 #ifndef ILRECO_TEST_UTILS_H
 #define ILRECO_TEST_UTILS_H
 
@@ -62,7 +68,7 @@ inline std::vector<ilreco_cluster> run_event(const std::vector<ilreco_hit>& hits
     constexpr int MAX_CLUSTERS = 256;
     TestContext& context = default_context();
     std::vector<ilreco_cluster> clusters(MAX_CLUSTERS);
-    const int n_found = ilreco_reconstruct(context.config, context.workspace,
+    const int n_found = ilreco_reconstruct(context.workspace,
                                            hits.data(), (int)hits.size(),
                                            clusters.data(), MAX_CLUSTERS);
     if (n_found < 0)

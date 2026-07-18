@@ -4,6 +4,9 @@
 // quiet machine when intentionally re-baselining).
 //
 //   ilreco_bench [--reps N]
+//
+// Shared helpers (ilt::run_event, TestContext, synth_shower, Rng) come from
+// common/ilreco_test_utils.h; infrastructure map: tests/README.md.
 
 #include <chrono>
 #include <cstdio>

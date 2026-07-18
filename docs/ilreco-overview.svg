@@ -30,18 +30,27 @@
       <rect x="120" y="60"  width="20" height="20" fill="#6fa9d4"/>
       <rect x="100" y="40"  width="20" height="20" fill="#6fa9d4"/>
       <rect x="100" y="80"  width="20" height="20" fill="#9dc4e2"/>
-      <rect x="120" y="80"  width="20" height="20" fill="#cfe3f2"/>
       <rect x="80"  y="80"  width="20" height="20" fill="#cfe3f2"/>
       <rect x="120" y="40"  width="20" height="20" fill="#e2eef7"/>
-      <!-- shower 2 cells (orange), overlapping tail with shower 1 -->
-      <rect x="140" y="120" width="20" height="20" fill="#f2c188"/>
-      <rect x="160" y="120" width="20" height="20" fill="#a34a00"/>
-      <rect x="180" y="120" width="20" height="20" fill="#e08214"/>
-      <rect x="160" y="100" width="20" height="20" fill="#f2c188"/>
-      <rect x="160" y="140" width="20" height="20" fill="#e08214"/>
-      <rect x="180" y="140" width="20" height="20" fill="#f8ddba"/>
-      <rect x="140" y="140" width="20" height="20" fill="#f8ddba"/>
+      <!-- shower 2 cells (orange), core two cells diagonally from shower 1 -->
+      <rect x="140" y="100" width="20" height="20" fill="#a34a00"/>
+      <rect x="160" y="100" width="20" height="20" fill="#e08214"/>
+      <rect x="140" y="120" width="20" height="20" fill="#e08214"/>
+      <rect x="160" y="120" width="20" height="20" fill="#f2c188"/>
+      <rect x="120" y="120" width="20" height="20" fill="#f2c188"/>
+      <rect x="160" y="80"  width="20" height="20" fill="#f8ddba"/>
       <rect x="180" y="100" width="20" height="20" fill="#f8ddba"/>
+      <rect x="180" y="120" width="20" height="20" fill="#f8ddba"/>
+      <rect x="140" y="140" width="20" height="20" fill="#f8ddba"/>
+    </g>
+    <!-- cells where both showers deposit: split blue / orange -->
+    <g stroke="#ffffff" stroke-width="1">
+      <path d="M120 80 h20 l-20 20 z" fill="#9dc4e2"/>
+      <path d="M140 80 l0 20 -20 0 z" fill="#f2c188"/>
+      <path d="M120 100 h20 l-20 20 z" fill="#cfe3f2"/>
+      <path d="M140 100 l0 20 -20 0 z" fill="#e8a95e"/>
+      <path d="M140 80 h20 l-20 20 z" fill="#cfe3f2"/>
+      <path d="M160 80 l0 20 -20 0 z" fill="#e8a95e"/>
     </g>
     <!-- grid lines on top -->
     <g stroke="#ccd4da" stroke-width="0.8" fill="none">
@@ -58,20 +67,20 @@
   <text x="460" y="62" text-anchor="middle" font-size="13" font-weight="bold" fill="#37424c">2 · islands → peaks → shower fit</text>
   <g transform="translate(350,75)">
     <rect x="0" y="0" width="220" height="220" fill="#f7f9fa" stroke="#8b98a3" stroke-width="1.5"/>
-    <!-- island outline around both showers -->
-    <path d="M55 35 h95 v20 h20 v50 h35 v70 h-70 v-20 h-25 v-35 h-55 v-65 h0 z"
+    <!-- island outline around both overlapping showers -->
+    <path d="M55 35 H145 V75 H185 V145 H115 V105 H55 Z"
           fill="none" stroke="#009E73" stroke-width="2.5" stroke-dasharray="6 3"/>
     <text x="38" y="30" font-size="10" fill="#00795a" font-weight="bold">island (connected cells)</text>
     <!-- peak markers -->
     <circle cx="110" cy="70" r="7" fill="none" stroke="#0b4f8a" stroke-width="2.5"/>
-    <circle cx="170" cy="130" r="7" fill="none" stroke="#a34a00" stroke-width="2.5"/>
-    <text x="110" y="58" text-anchor="middle" font-size="10" fill="#0b4f8a" font-weight="bold">peak 1</text>
-    <text x="170" y="118" text-anchor="middle" font-size="10" fill="#a34a00" font-weight="bold">peak 2</text>
-    <!-- profile contours -->
+    <circle cx="150" cy="110" r="7" fill="none" stroke="#a34a00" stroke-width="2.5"/>
+    <text x="102" y="56" text-anchor="middle" font-size="10" fill="#0b4f8a" font-weight="bold">peak 1</text>
+    <text x="162" y="98" text-anchor="middle" font-size="10" fill="#a34a00" font-weight="bold">peak 2</text>
+    <!-- profile contours: the tails genuinely overlap between the peaks -->
     <ellipse cx="110" cy="70" rx="34" ry="30" fill="none" stroke="#0b4f8a" stroke-width="1" opacity="0.5"/>
     <ellipse cx="110" cy="70" rx="52" ry="47" fill="none" stroke="#0b4f8a" stroke-width="1" opacity="0.25"/>
-    <ellipse cx="170" cy="130" rx="30" ry="27" fill="none" stroke="#a34a00" stroke-width="1" opacity="0.5"/>
-    <ellipse cx="170" cy="130" rx="47" ry="43" fill="none" stroke="#a34a00" stroke-width="1" opacity="0.25"/>
+    <ellipse cx="150" cy="110" rx="30" ry="27" fill="none" stroke="#a34a00" stroke-width="1" opacity="0.5"/>
+    <ellipse cx="150" cy="110" rx="47" ry="43" fill="none" stroke="#a34a00" stroke-width="1" opacity="0.25"/>
     <text x="110" y="245" text-anchor="middle" font-size="11" fill="#5a6570">energy sharing by measured shower profile,</text>
     <text x="110" y="259" text-anchor="middle" font-size="11" fill="#5a6570">χ² position refinement, edge-aware correction</text>
   </g>
@@ -90,7 +99,7 @@
       <circle cx="28" cy="106" r="9" fill="#e08214"/>
       <text x="48" y="102" font-weight="bold">cluster 2</text>
       <text x="48" y="118" font-size="11" fill="#37424c">E = 1.12 GeV</text>
-      <text x="48" y="132" font-size="11" fill="#37424c">x = 8.11, y = 6.05 cells · χ² = 1.8</text>
+      <text x="48" y="132" font-size="11" fill="#37424c">x = 6.93, y = 5.08 cells · χ² = 1.8</text>
     </g>
     <line x1="14" y1="152" x2="196" y2="152" stroke="#ccd4da"/>
     <text x="105" y="176" text-anchor="middle" font-size="11" fill="#5a6570">overlapping showers separated,</text>

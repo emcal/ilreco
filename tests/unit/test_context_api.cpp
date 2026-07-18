@@ -1,6 +1,9 @@
 // Context-API tests: 0-based conventions, error handling, dynamic grid
 // sizing, and true multithreading (N threads, one shared const config, one
 // workspace per thread — results must equal the serial reference exactly).
+//
+// Shared helpers (ilt::run_event, TestContext, synth_shower, Rng) come from
+// common/ilreco_test_utils.h; infrastructure map: tests/README.md.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -17,7 +20,7 @@ namespace {
 std::vector<ilreco_cluster> run_on(const ilt::TestContext& context,
                                    const std::vector<ilreco_hit>& hits) {
     std::vector<ilreco_cluster> clusters(64);
-    const int n_found = ilreco_reconstruct(context.config, context.workspace,
+    const int n_found = ilreco_reconstruct(context.workspace,
                                            hits.data(), (int)hits.size(),
                                            clusters.data(), (int)clusters.size());
     REQUIRE(n_found >= 0);
@@ -44,11 +47,11 @@ TEST_CASE("context API rejects invalid input", "[unit][context]") {
     ilreco_cluster clusters[4];
     const ilreco_hit col_out_of_range{10, 0, 1.0};
     const ilreco_hit row_negative{0, -1, 1.0};
-    CHECK(ilreco_reconstruct(context.config, context.workspace,
+    CHECK(ilreco_reconstruct(context.workspace,
                              &col_out_of_range, 1, clusters, 4) == -1);
-    CHECK(ilreco_reconstruct(context.config, context.workspace,
+    CHECK(ilreco_reconstruct(context.workspace,
                              &row_negative, 1, clusters, 4) == -1);
-    CHECK(ilreco_reconstruct(context.config, context.workspace,
+    CHECK(ilreco_reconstruct(context.workspace,
                              nullptr, 0, clusters, 4) == 0);
 }
 
@@ -86,7 +89,7 @@ TEST_CASE("multithreading: shared config, workspace per thread, exact results",
             for (int i = 0; i < N_EVENTS; ++i) {
                 ilreco_cluster clusters[64];
                 const int n_found =
-                    ilreco_reconstruct(serial.config, workspace, events[i].data(),
+                    ilreco_reconstruct(workspace, events[i].data(),
                                        (int)events[i].size(), clusters, 64);
                 per_thread[t][i].assign(clusters, clusters + std::min(n_found, 64));
             }

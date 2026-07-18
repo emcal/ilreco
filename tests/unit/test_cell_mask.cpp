@@ -2,6 +2,9 @@
 // hole — the EIC-B0-like case). Verifies input validation, mask-derived type
 // labels, the physics effect (honest containment correction at real
 // boundaries), and equivalence when the mask marks every cell as existing.
+//
+// Shared helpers (ilt::run_event, TestContext, synth_shower, Rng) come from
+// common/ilreco_test_utils.h; infrastructure map: tests/README.md.
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -49,7 +52,7 @@ struct MaskedContext {
 
     std::vector<ilreco_cluster> run(const std::vector<ilreco_hit>& hits) {
         std::vector<ilreco_cluster> clusters(16);
-        const int n_found = ilreco_reconstruct(config, workspace, hits.data(),
+        const int n_found = ilreco_reconstruct(workspace, hits.data(),
                                                (int)hits.size(), clusters.data(), 16);
         REQUIRE(n_found >= 0);
         clusters.resize(std::min(n_found, 16));
@@ -65,9 +68,9 @@ TEST_CASE("mask: hits on missing cells are rejected", "[unit][mask]") {
     ilreco_cluster clusters[4];
     const ilreco_hit on_hole_cell{5, 4, 1.0};
     const ilreco_hit outside_circle{0, 0, 1.0};
-    CHECK(ilreco_reconstruct(detector.config, detector.workspace,
+    CHECK(ilreco_reconstruct(detector.workspace,
                              &on_hole_cell, 1, clusters, 4) == -1);
-    CHECK(ilreco_reconstruct(detector.config, detector.workspace,
+    CHECK(ilreco_reconstruct(detector.workspace,
                              &outside_circle, 1, clusters, 4) == -1);
 }
 

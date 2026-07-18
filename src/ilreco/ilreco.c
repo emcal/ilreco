@@ -81,9 +81,9 @@ struct ilreco_config {
 };
 
 struct ilreco_workspace {
+    const ilreco_config *cfg;  /* the calorimeter this workspace was created
+                                  for; the config must outlive the workspace */
     int32_t stride;        /* row length of iwrk/idp/fwrk; == cfg->madr       */
-    int32_t mcl;           /* copies of the config capacities, for checking   */
-    int32_t madcgam;       /*   that workspace and config match               */
     /* per-event buffers (filled by ilreco_reconstruct) */
     int32_t *ia;           /* [madr]  packed cell addresses, used from 1      */
     double  *id;           /* [madr]  cell energies [GeV], parallel to ia     */
@@ -310,9 +310,8 @@ ilreco_workspace *ilreco_workspace_create(const ilreco_config *cfg) {
     ilreco_workspace *wk = calloc(1, sizeof *wk);
     if (!wk) return NULL;
     const size_t m = (size_t)cfg->madr;
+    wk->cfg = cfg;
     wk->stride = cfg->madr;
-    wk->mcl = cfg->mcl;
-    wk->madcgam = cfg->madcgam;
     const size_t n_int = m /*ia*/ + m /*iwork*/ + (size_t)cfg->mcl /*lencl*/
                        + (8 * m + 2) /*iazero*/
                        + (size_t)(_MPK_ + 1) * m /*iwrk*/
@@ -345,12 +344,12 @@ void ilreco_workspace_destroy(ilreco_workspace *ws) {
     free(ws);
 }
 
-int32_t ilreco_reconstruct(const ilreco_config *cfg, ilreco_workspace *ws,
+int32_t ilreco_reconstruct(ilreco_workspace *ws,
                            const ilreco_hit *hits, int32_t n_hits,
                            ilreco_cluster *out, int32_t max_out) {
-    if (!cfg || !ws || n_hits < 0 || (n_hits > 0 && !hits) ||
-        ws->stride < cfg->madr || n_hits > cfg->madr - 2)
-        return -1;
+    if (!ws || n_hits < 0 || (n_hits > 0 && !hits)) return -1;
+    const ilreco_config *cfg = ws->cfg;
+    if (n_hits > cfg->madr - 2) return -1;
     for (int32_t i = 0; i < n_hits; ++i) {
         if (hits[i].col < 0 || hits[i].col >= cfg->ncol ||
             hits[i].row < 0 || hits[i].row >= cfg->nrow)

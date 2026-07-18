@@ -4,11 +4,11 @@
 
 ![energy resolution benchmark](docs/energy-resolution-benchmark.png)
 
-*Physics benchmark: energy resolution obtained with ilreco on Geant4-simulated
-PbWO4 arrays (2.055x2.055x20 cm crystals, measurement-matched response model) for
-3x3, 10x10 and 100x100 grids, electrons at 1-20 GeV on the central crystal —
-reproducing the measured PbWO4 detector model (dashed). Produced by the
-simulation-reconstruction regression that gates every change to this library.*
+*Physics benchmark: energy resolution obtained with ilreco on a Geant4-simulated
+10x10 PbWO4 array (2.055x2.055x20 cm crystals, measurement-matched response
+model), electrons at 1-20 GeV — reproducing the HallD measured PbWO4 model
+(dashed). Produced by the simulation-reconstruction regression that gates every
+change to this library.*
 
 Island-clustering reconstruction for square-cell calorimeters (PbWO4 / lead
 glass): connected-region search, peak finding, measured-shower-profile energy
@@ -33,7 +33,7 @@ ilreco_workspace *ws = ilreco_workspace_create(cfg);
 /* per event: zero allocations */
 ilreco_hit hits[] = { {12, 14, 1.85}, {13, 14, 0.42}, {12, 15, 0.31} };  /* 0-based col,row; GeV */
 ilreco_cluster out[16];
-int n = ilreco_reconstruct(cfg, ws, hits, 3, out, 16);
+int n = ilreco_reconstruct(ws, hits, 3, out, 16);
 for (int i = 0; i < n && i < 16; ++i)
     printf("E=%.3f GeV at (%.2f, %.2f) cells, chi2=%.2f\n",
            out[i].e, out[i].x, out[i].y, out[i].chi2);
@@ -100,8 +100,10 @@ ilreco_workspace *ws = ilreco_workspace_create(cfg);
 ```
 
 One allocation, sized for the 8×8, reused for every event this thread
-processes. One workspace per thread, never shared (see the multithreading
-section).
+processes. The workspace remembers which config it belongs to, so from here
+on every call takes only `ws` — with several calorimeters in one program
+there is no way to pair a workspace with the wrong config. One workspace per
+thread, never shared (see the multithreading section).
 
 ### Step 4 — put the event into the input array
 
@@ -120,7 +122,7 @@ ilreco_hit hits[15] = {
 };   /* hole cells (3,3) (4,3) (3,4) (4,4): no entries */
 
 ilreco_cluster out[8];
-int n = ilreco_reconstruct(cfg, ws, hits, 15, out, 8);
+int n = ilreco_reconstruct(ws, hits, 15, out, 8);
 ```
 
 (The picture draws row 0 at the bottom; that is a drawing convention — ilreco
@@ -192,13 +194,14 @@ ilreco_config *cfg = ilreco_config_create(...);   /* main thread, once */
 
 /* in each worker thread: */
 ilreco_workspace *ws = ilreco_workspace_create(cfg);
-for (;;) { /* ... ilreco_reconstruct(cfg, ws, ...) on this thread's events ... */ }
+for (;;) { /* ... ilreco_reconstruct(ws, ...) on this thread's events ... */ }
 ilreco_workspace_destroy(ws);
 ```
 
 - The config is immutable after creation — any number of threads may read it
   concurrently, no locking needed. Call the `ilreco_config_set_*` tuners
-  *before* the config is shared, never after.
+  *before* the first workspace is created, never after. The config must
+  outlive every workspace created from it.
 - A workspace must never be used by two threads at once (it is the event
   scratch memory). One per thread, created once, reused for every event —
   do NOT create/destroy per event.

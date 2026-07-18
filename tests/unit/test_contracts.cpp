@@ -1,6 +1,9 @@
 // Contract tests for the ilreco public API. These pin down what callers can
 // rely on — NOT the internal algorithm. Cells are 0-based (col, row), cluster
 // positions in 0-based cell units, exactly as in ilreco.h.
+//
+// Shared helpers (ilt::run_event, TestContext, synth_shower, Rng) come from
+// common/ilreco_test_utils.h; infrastructure map: tests/README.md.
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -140,7 +143,7 @@ TEST_CASE("independent contexts from the same profile give identical results",
 
     ilt::TestContext fresh(GRID_COLS, GRID_ROWS);
     ilreco_cluster clusters[8];
-    const int n_found = ilreco_reconstruct(fresh.config, fresh.workspace,
+    const int n_found = ilreco_reconstruct(fresh.workspace,
                                            hits.data(), (int)hits.size(),
                                            clusters, 8);
     REQUIRE(n_found == (int)from_shared.size());
