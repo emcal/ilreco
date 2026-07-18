@@ -80,9 +80,9 @@ which on some runtimes is after your config is gone. Prefer the pool
 unless the program provably has one calorimeter and framework-managed
 thread lifetimes.
 
-## This is exactly what the Python binding does
+## The Python binding uses pattern 1
 
-`ilreco.Calorimeter` embeds pattern 1 in its C core: any number of Python
-threads — or the internal `n_jobs` chunk workers — may call
+`ilreco.Calorimeter` embeds the workspace pool in its C core: any number
+of Python threads — or the internal `n_jobs` chunk workers — may call
 `reconstruct()` on the same object concurrently, each call borrowing a
 workspace from the pool. See [Python API](./python-api).

@@ -83,10 +83,10 @@ void ilreco_config_set_hole_classification(ilreco_config *cfg, int32_t enabled);
  * Returns 0 on success, -1 on invalid input. */
 int32_t ilreco_config_set_cell_mask(ilreco_config *cfg, const unsigned char *mask);
 
-/* Per-thread workspace: ONE allocation (internal arena), reused for every
- * event. The workspace keeps a reference to cfg — after this call the config
- * is only needed to spawn further workspaces, and it must outlive every
- * workspace created from it. Never share a workspace between threads. */
+/* Per-thread workspace: all working memory in one allocation, reused for
+ * every event. The workspace keeps a reference to cfg — after this call the
+ * config is only needed to spawn further workspaces, and it must outlive
+ * every workspace created from it. Never share a workspace between threads. */
 ilreco_workspace *ilreco_workspace_create(const ilreco_config *cfg);
 void ilreco_workspace_destroy(ilreco_workspace *ws);
 

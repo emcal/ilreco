@@ -1,6 +1,6 @@
 # Install
 
-Linux and macOS are supported. Pick the route that matches how you work.
+Linux and macOS are supported.
 
 ## Python
 

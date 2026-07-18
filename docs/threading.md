@@ -13,7 +13,7 @@ for (;;) { /* ... ilreco_reconstruct(ws, ...) on this thread's events ... */ }
 ilreco_workspace_destroy(ws);
 ```
 
-The rules, and why each holds:
+The rules:
 
 - **The config is immutable after creation** — any number of threads may
   read it concurrently, no locking needed. Call the `ilreco_config_set_*`
@@ -29,11 +29,10 @@ The rules, and why each holds:
 
 ## The guarantee
 
-Parallel reconstruction is not merely safe — it is **exact**. The test
-suite reconstructs 200 events on 4 threads with a shared config and
-compares every energy and position against the serial reference **bitwise**
-(`tests/unit/test_context_api.cpp`, tag `[threads]`). Determinism is part
-of the contract, not an accident.
+Parallel reconstruction is exact. The test suite reconstructs 200 events
+on 4 threads with a shared config and compares every energy and position
+against the serial reference **bitwise**
+(`tests/unit/test_context_api.cpp`, tag `[threads]`).
 
 ## When threads are not yours
 

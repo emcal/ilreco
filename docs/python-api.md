@@ -91,13 +91,12 @@ clusters = calo.reconstruct(table, n_jobs=8)    # force 8 threads
 - `"auto"` stays serial for small jobs (a handful of events is not worth a
   thread pool) and otherwise splits the events at event boundaries over a
   `concurrent.futures.ThreadPoolExecutor`.
-- Results are **identical for every `n_jobs` value** — chunking never
-  changes physics, and the output order is restored at concatenation. The
-  test suite asserts this bitwise.
+- Results are **identical for every `n_jobs` value** (asserted bitwise in
+  the test suite): chunking only splits the work, and the output order is
+  restored at concatenation.
 
 ## Validation
 
 The binding is gated by the same frozen golden tables as the C library:
 every event of every golden set must reproduce its recorded response
-(`python/tests/`). If `pip install ilreco` works, you are running validated
-physics.
+(`python/tests/`).

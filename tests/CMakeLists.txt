@@ -16,6 +16,9 @@ set(ILRECO_PROF_PWO "${CMAKE_CURRENT_SOURCE_DIR}/../data/prof_pwo.dat")
 set(ILRECO_TEST_DATA "${CMAKE_CURRENT_SOURCE_DIR}/data")
 
 add_library(ilreco_test_common INTERFACE)
+# the tests use C++17 (std::filesystem, structured bindings); AppleClang
+# does not default to it, so require it explicitly
+target_compile_features(ilreco_test_common INTERFACE cxx_std_17)
 target_include_directories(ilreco_test_common INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/common)
 target_compile_definitions(ilreco_test_common INTERFACE
     ILRECO_PROF_PWO="${ILRECO_PROF_PWO}"
