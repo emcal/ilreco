@@ -47,6 +47,11 @@ test.
   evaluation order and integer quantization are part of the contract,
   pinned bit-exact by the golden tables. Do not simplify arithmetic there
   without re-baselining.
+- Every build of `ilreco.c` compiles with `-ffp-contract=off`: fused
+  multiply-add contraction (the arm64 default) changes last-ulp results
+  and can flip the ordering of near-degenerate clusters, breaking the
+  cross-platform bit-identity that the golden tables enforce. If you
+  embed the source directly into your own build, keep that flag.
 
 ## CI
 

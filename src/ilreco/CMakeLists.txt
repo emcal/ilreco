@@ -2,6 +2,14 @@
 add_library(ilreco ilreco.c)
 add_library(ilreco::ilreco ALIAS ilreco)
 
+# Reconstruction results are bit-identical across platforms only if the
+# compiler cannot contract a*b+c into fused multiply-add (arm64 compilers do
+# by default, x86 ones do not) — a last-ulp energy difference can flip the
+# ordering of near-degenerate clusters. Pin contraction off.
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(ilreco PRIVATE -ffp-contract=off)
+endif()
+
 target_include_directories(ilreco PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>
     $<INSTALL_INTERFACE:include>)

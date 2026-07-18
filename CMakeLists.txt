@@ -25,6 +25,10 @@ if(ILRECO_BUILD_PYTHON)
     python_add_library(_core MODULE python/src/_core.c src/ilreco/ilreco.c
                        WITH_SOABI)
     target_include_directories(_core PRIVATE src/ilreco)
+    # same cross-platform bit-identity requirement as the library target
+    if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+        target_compile_options(_core PRIVATE -ffp-contract=off)
+    endif()
     target_link_libraries(_core PRIVATE Python::NumPy)
     if(UNIX)
         target_link_libraries(_core PRIVATE m)
