@@ -1,1 +1,7 @@
 build*/
+__pycache__/
+*.pyc
+python/ilreco/_core*.so
+python/ilreco/data/
+.venv/
+dist/

@@ -26,7 +26,8 @@ add_executable(ilreco_unit_tests
     unit/test_contracts.cpp
     unit/test_edge_inputs.cpp
     unit/test_context_api.cpp
-    unit/test_cell_mask.cpp)
+    unit/test_cell_mask.cpp
+    unit/test_cpp_wrapper.cpp)
 target_link_libraries(ilreco_unit_tests PRIVATE ilreco_test_common Catch2::Catch2WithMain)
 find_package(Threads REQUIRED)
 target_link_libraries(ilreco_unit_tests PRIVATE Threads::Threads)

@@ -1,23 +1,41 @@
-cmake_minimum_required(VERSION 3.14)
+# The ilreco library target + install/export rules (find_package support).
+add_library(ilreco ilreco.c)
+add_library(ilreco::ilreco ALIAS ilreco)
 
-set(ILRECO_LIBNAME ilreco)
+target_include_directories(ilreco PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_LIST_DIR}>
+    $<INSTALL_INTERFACE:include>)
+if(UNIX)
+    target_link_libraries(ilreco PUBLIC m)
+endif()
+set_target_properties(ilreco PROPERTIES
+    VERSION ${PROJECT_VERSION}
+    SOVERSION ${PROJECT_VERSION_MAJOR}
+    PUBLIC_HEADER "ilreco.h;ilreco.hpp")
 
-# => ADD Sources here:
-set(ILRECO_SOURCES ilreco.c)
+include(GNUInstallDirs)
+install(TARGETS ilreco EXPORT ilrecoTargets
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES ${PROJECT_SOURCE_DIR}/data/prof_pwo.dat
+              ${PROJECT_SOURCE_DIR}/data/prof_lg.dat
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/ilreco)
 
-set(ILRECO_TARGET_NAME ${ILRECO_LIBNAME})
+install(EXPORT ilrecoTargets
+    NAMESPACE ilreco::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ilreco)
 
-#   Most of the time you are not interested in lines below
-# ==========================================================
-
-project(${ILRECO_LIBNAME})
-
-add_library(${ILRECO_TARGET_NAME} SHARED ${ILRECO_SOURCES})
-
-target_include_directories(ilreco PUBLIC ${CMAKE_CURRENT_LIST_DIR})
-# target_link_libraries(${PLUGIN_TARGET_NAME}  dl pthread)
-
-#
-#set_target_properties(${ILRECO_TARGET_NAME} PROPERTIES PREFIX "" OUTPUT_NAME ${PLUGIN_NAME} SUFFIX ".so")
-
-install(TARGETS ${ILRECO_TARGET_NAME})
+include(CMakePackageConfigHelpers)
+configure_package_config_file(
+    ${CMAKE_CURRENT_LIST_DIR}/ilrecoConfig.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/ilrecoConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ilreco)
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/ilrecoConfigVersion.cmake
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion)
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/ilrecoConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/ilrecoConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/ilreco)

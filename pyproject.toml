@@ -1,0 +1,28 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "numpy>=1.24"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "ilreco"
+version = "1.0.0"
+description = "Island-clustering reconstruction for square-cell calorimeters"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24"]
+classifiers = [
+    "Programming Language :: C",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Physics",
+    "License :: OSI Approved :: MIT License",
+]
+
+[project.urls]
+Repository = "https://github.com/emcal/ilreco"
+
+[tool.scikit-build]
+cmake.args = ["-DILRECO_BUILD_PYTHON=ON", "-DILRECO_BUILD_TESTS=OFF"]
+wheel.packages = ["python/ilreco"]
+
+[tool.pytest.ini_options]
+testpaths = ["python/tests"]

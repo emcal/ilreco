@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="400" viewBox="0 0 880 400" font-family="Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 1 L 9 5 L 0 9 z" fill="#5a6570"/>
+    </marker>
+  </defs>
+  <rect width="880" height="400" fill="#ffffff"/>
+
+  <!-- config -->
+  <rect x="30" y="120" width="200" height="90" rx="10" fill="#dfeaf3" stroke="#0b4f8a" stroke-width="2"/>
+  <text x="130" y="150" text-anchor="middle" font-size="15" font-weight="bold" fill="#0b4f8a">ilreco_config</text>
+  <text x="130" y="172" text-anchor="middle" font-size="11" fill="#37424c">created once, then immutable</text>
+  <text x="130" y="188" text-anchor="middle" font-size="11" fill="#37424c">geometry · profile tables · mask</text>
+  <text x="130" y="240" text-anchor="middle" font-size="11" fill="#5a6570">read concurrently by all threads,</text>
+  <text x="130" y="255" text-anchor="middle" font-size="11" fill="#5a6570">no locking needed</text>
+
+  <!-- workspace boxes -->
+  <g stroke="#5a6570" stroke-width="2" fill="none">
+    <path d="M 235 145 C 290 145 290 80 330 80" marker-end="url(#arrow)"/>
+    <path d="M 235 165 H 330" marker-end="url(#arrow)"/>
+    <path d="M 235 185 C 290 185 290 250 330 250" marker-end="url(#arrow)"/>
+  </g>
+  <text x="282" y="128" text-anchor="middle" font-size="10" fill="#5a6570">workspace_create</text>
+
+  <g font-size="13" fill="#1f2a33">
+    <rect x="335" y="50" width="230" height="62" rx="8" fill="#f7f9fa" stroke="#8b98a3" stroke-width="1.5"/>
+    <text x="450" y="74" text-anchor="middle" font-weight="bold">thread 1 — workspace 1</text>
+    <text x="450" y="94" text-anchor="middle" font-size="11" fill="#37424c">all working memory, one allocation</text>
+
+    <rect x="335" y="135" width="230" height="62" rx="8" fill="#f7f9fa" stroke="#8b98a3" stroke-width="1.5"/>
+    <text x="450" y="159" text-anchor="middle" font-weight="bold">thread 2 — workspace 2</text>
+    <text x="450" y="179" text-anchor="middle" font-size="11" fill="#37424c">reused for every event, never freed</text>
+
+    <rect x="335" y="220" width="230" height="62" rx="8" fill="#f7f9fa" stroke="#8b98a3" stroke-width="1.5"/>
+    <text x="450" y="244" text-anchor="middle" font-weight="bold">thread N — workspace N</text>
+    <text x="450" y="264" text-anchor="middle" font-size="11" fill="#37424c">destroyed when the thread is done</text>
+  </g>
+
+  <!-- event streams -->
+  <g stroke="#5a6570" stroke-width="2" fill="none">
+    <path d="M 570 81 H 640" marker-end="url(#arrow)"/>
+    <path d="M 570 166 H 640" marker-end="url(#arrow)"/>
+    <path d="M 570 251 H 640" marker-end="url(#arrow)"/>
+  </g>
+  <g font-size="12" fill="#1f2a33">
+    <rect x="645" y="58" width="205" height="46" rx="8" fill="#e8f4ee" stroke="#009E73" stroke-width="1.5"/>
+    <text x="747" y="78" text-anchor="middle">reconstruct(ws, event…)</text>
+    <text x="747" y="95" text-anchor="middle" font-size="10" fill="#37424c">zero allocations per event</text>
+    <rect x="645" y="143" width="205" height="46" rx="8" fill="#e8f4ee" stroke="#009E73" stroke-width="1.5"/>
+    <text x="747" y="163" text-anchor="middle">reconstruct(ws, event…)</text>
+    <text x="747" y="180" text-anchor="middle" font-size="10" fill="#37424c">bitwise equal to serial results</text>
+    <rect x="645" y="228" width="205" height="46" rx="8" fill="#e8f4ee" stroke="#009E73" stroke-width="1.5"/>
+    <text x="747" y="248" text-anchor="middle">reconstruct(ws, event…)</text>
+    <text x="747" y="265" text-anchor="middle" font-size="10" fill="#37424c">independent event streams</text>
+  </g>
+
+  <!-- forbidden pattern -->
+  <g>
+    <rect x="335" y="320" width="515" height="52" rx="8" fill="#fdf0f0" stroke="#c94040" stroke-width="1.5"/>
+    <text x="360" y="342" font-size="13" font-weight="bold" fill="#c94040">never:</text>
+    <text x="415" y="342" font-size="12" fill="#1f2a33">two threads sharing one workspace — it is the event scratch memory;</text>
+    <text x="415" y="360" font-size="12" fill="#1f2a33">use a pool or thread-local workspaces when threads are not yours (see Advanced MT)</text>
+  </g>
+  <text x="130" y="345" text-anchor="middle" font-size="11" fill="#5a6570">destruction order:</text>
+  <text x="130" y="361" text-anchor="middle" font-size="11" fill="#5a6570">workspaces first, config last</text>
+</svg>

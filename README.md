@@ -14,7 +14,11 @@ Island-clustering reconstruction for square-cell calorimeters (PbWO4 / lead
 glass): connected-region search, peak finding, measured-shower-profile energy
 sharing between overlapping showers, χ²-refined positions and containment-
 corrected energies. Plain C11, zero dependencies, thread-safe, allocation-free
-per event. Originally written by Ilya Larin (HyCal/PrimEx lineage).
+per event; C++ RAII wrapper and Python binding included. Originally written by
+Ilya Larin (HyCal/PrimEx lineage).
+
+**Documentation:** <https://emcal.github.io/ilreco/> — install (pip / plain C /
+CMake), tutorial, threading and memory model, Python API, shower profiles.
 
 ## Quick start
 
@@ -40,6 +44,14 @@ for (int i = 0; i < n && i < 16; ++i)
 
 ilreco_workspace_destroy(ws);
 ilreco_config_destroy(cfg);
+```
+
+Or from Python (`pip install ilreco`):
+
+```python
+import ilreco
+calo = ilreco.Calorimeter(30, 30, profile="pwo")
+clusters = calo.reconstruct(hits_table)   # numpy table in, numpy table out
 ```
 
 Build:

@@ -7,7 +7,10 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - name: Configure
@@ -20,8 +23,23 @@ jobs:
         run: ./build/tests/ilreco_bench --reps 200 | tee benchmark.json
       - uses: actions/upload-artifact@v4
         with:
-          name: benchmark
+          name: benchmark-${{ matrix.os }}
           path: benchmark.json
+
+  python:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build and install the package
+        run: pip install . pytest
+      - name: Run the binding test suite (golden replay incl.)
+        run: pytest python/tests -q
 
   sanitizers:
     # Informational for now: surfaces leaks/UB without gating merges.
