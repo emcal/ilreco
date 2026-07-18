@@ -17,16 +17,15 @@ the library.*
 
 ## History
 
-The algorithm was written by Ilya Larin for the PrimEx experiment's HyCal
-calorimeter (PbWO4 core, lead-glass ring) and has been used across
-generations of JLab electromagnetic calorimetry since. In 2026 the library
+The algorithm was written by Ilya Larin and has been used across
+generations of JLab electromagnetic calorimetry since. In 2020-2026 the library
 was modernized without touching the physics: all state moved into explicit
-contexts (an immutable shared configuration and per-thread workspaces),
-indexing became 0-based, geometry became runtime configuration, and a
+contexts (an immutable shared configuration and per-thread workspaces), 
+geometry became runtime configuration, and a
 cell-existence mask added support for circular calorimeters and asymmetric
-beam holes (e.g. the EIC B0 EMCal). Every step of that modernization was
+beam holes (e.g. the EIC B0 EMCal). Every step of the development
 validated bit-for-bit against frozen golden tables and byte-identical
-reconstruction of 33 simulated datasets.
+reconstruction of multiple simulated datasets.
 
 ## Where next
 

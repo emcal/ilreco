@@ -11,8 +11,8 @@ glass): connected-region search, peak finding, measured-shower-profile energy
 sharing between overlapping showers, χ²-refined positions and containment-
 corrected energies. Authored by Ilya Larin.
 
-Drop in, plain C11, zero dependencies, thread-safe, allocation-free
-per event. With C++ RAII wrapper and python bindings for your convenience! 
+Drop-in, plain C11, zero dependencies, thread-safe, allocation-free
+per event library. With C++ RAII wrapper and python bindings for your convenience! 
 
 
 ![ilreco overview](docs/ilreco-overview.svg)
