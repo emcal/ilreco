@@ -32,7 +32,8 @@ reconstruction of multiple simulated datasets.
 - [Install](./install) — pip, plain C, or CMake
 - [Getting started](./getting-started) — a full worked example
 - [Python API](./python-api) — numpy tables in, numpy tables out
-- [Shower profiles](./profiles) — what the "weights" file is and when you
-  need your own
-- [The log-likelihood method](./log-likelihood) — tabulated-probability
-  position fit and two-gamma separation (`method="log_likelihood"`)
+- [Algorithms](./algorithms) — how the reconstruction works, stage by
+  stage, for a calorimetry reader: clustering,
+  [shower profiles](./profiles), the [χ² fit](./chi2-method), the
+  [log-likelihood method](./log-likelihood), and
+  [overlapping showers](./two-gamma)

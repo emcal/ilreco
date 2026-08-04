@@ -8,6 +8,7 @@ export default defineConfig({
     nav: [
       { text: 'Install', link: '/install' },
       { text: 'Getting started', link: '/getting-started' },
+      { text: 'Algorithms', link: '/algorithms' },
       { text: 'Python', link: '/python-api' },
       { text: 'C++', link: '/cpp-api' },
     ],
@@ -31,10 +32,22 @@ export default defineConfig({
         ],
       },
       {
-        text: 'Reference',
+        text: 'Algorithms',
         items: [
+          { text: 'How ilreco reconstructs showers', link: '/algorithms' },
+          { text: 'Clustering & peak finding', link: '/clustering' },
           { text: 'Shower profiles', link: '/profiles' },
-          { text: 'Development', link: '/development' },
+          { text: 'The χ² position fit', link: '/chi2-method' },
+          { text: 'The log-likelihood method', link: '/log-likelihood' },
+          { text: 'Overlapping showers', link: '/two-gamma' },
+        ],
+      },
+      {
+        text: 'Development',
+        items: [
+          { text: 'Building & contributing', link: '/development' },
+          { text: 'Generating shower profiles', link: '/generating-profiles' },
+          { text: 'Generating likelihood tables', link: '/generating-ll-tables' },
         ],
       },
     ],

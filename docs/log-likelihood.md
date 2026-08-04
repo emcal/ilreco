@@ -13,8 +13,8 @@ import ilreco
 calo = ilreco.Calorimeter(
     20, 20, profile="pwo",
     method="log_likelihood",
-    ll_profiles="llprof_asset.bin",   # per-energy tables, see below
-    split=True)                       # optional two-gamma separation
+    ll_profiles="llprof_asset.bin",   # per-energy tables
+    split=True)                       # optional two-shower separation
 ```
 
 The cluster **energy** is unchanged — it stays the containment-corrected
@@ -23,14 +23,14 @@ likelihood maximization is a possible later extension).
 
 ## The tabulated distributions
 
-For a photon hitting the calorimeter at a known point, the quantity
+For a particle hitting the calorimeter at a known point, the quantity
 tabulated is the fraction `f = e_vis / E_incident` a cell collects, as a
 function of the cell's offset from the impact point. Offsets are measured
 in 0.01-cell steps; cells are square, so distributions are symmetric under
 sign flips and axis swaps, and each offset is stored once as
 `(offset_major, offset_minor)` with `minor <= major <= 500` — 125 751 nodes.
-Cells below the readout sparsification threshold record `f = 0`; that
-probability is tracked separately.
+Cells below the readout threshold record `f = 0`; that probability is
+tracked separately.
 
 ![node distributions](./ll-node-distributions.png)
 
@@ -40,38 +40,20 @@ near-exponential from `f = 0`. Both the shapes and the zero-probability `p0`
 depend strongly on energy — hence per-energy tables, with the table nearest
 in log-energy chosen per cluster.*
 
-## From histograms to the likelihood
+## What the library evaluates
 
-Per node and energy the asset stores `nll(f) = -ln(p(f) / pmax)` on a
-shared log-`f` bin grid, where `p` is the probability *density* of `f` and
-`pmax` its maximum — plus `nll(0)`, the value used for cells that recorded
-nothing. The preparation (Python, `830_llprof_asset.py` in the study
-workspace):
+Per node and energy the asset stores the negative log-likelihood
+`nll(f) = -ln(p(f) / pmax)` on a shared log-`f` bin grid, where `p` is the
+probability density of `f` and `pmax` its maximum — so a cell sitting at
+the most probable fraction for the hypothesis costs zero, and improbable
+cells cost more. A separate `nll(0)` covers cells that recorded nothing:
+a zero cell is a *censored* observation ("somewhere below the readout
+threshold"), and its likelihood is the measured zero probability spread
+over that interval.
 
-1. **crack repair** — nodes whose offset is 50 mod 100 come only from
-   simulation impacts aimed exactly at the inter-crystal gap, where an
-   ideal, perfectly perpendicular point gun flies down the wrap gap and
-   deposits almost nothing; they are replaced by neighbor-node averages;
-2. **smoothing** — a narrow Gaussian kernel over the raw counts;
-3. **exponential tails** (falling nodes) — `lambda = <f_nonzero>` defines
-   `dens(f) = (1-p0) exp(-f/lambda)/lambda`, used wherever the histogram
-   has too few entries and for the `f -> 0` extrapolation; "peaked"
-   (near-center) nodes instead extend `ln dens` linearly in `f` on both
-   sides of the well-populated support;
-4. **`nll(0)`** — a zero cell is a *censored* observation ("below the
-   sparsification threshold"), so its probability is the measured zero
-   mass spread over the censored interval:
-   `nll(0) = -ln((p0 / f_thr) / pmax)` with `f_thr = threshold / E`
-   (density extrapolation to `f = 0` proved unstable where the histogram
-   support edge is the threshold itself);
-5. **quantization** — `nll` clipped to [0, 32], stored as uint16.
-
-![asset curves](./ll-asset-curves.png)
-
-*Prepared likelihood curves (line) over the raw per-bin densities (steps) —
-including repaired crack nodes (right columns). The flat continuation below
-the data's lower edge is the deliberate extrapolation beneath the
-sparsification threshold.*
+No fitting happens at run time — the tables are read as they are. How they
+are produced from simulation is
+[generating log-likelihood tables](./generating-ll-tables).
 
 ## Position fit
 
@@ -83,11 +65,11 @@ node. The fit is a coarse-to-fine descent on the 0.01-cell node grid
 average of the best four nodes of the final 3×3 neighborhood. The
 `chi2` field of the output carries `nll / ndof` for this method.
 
-## Two-gamma separation
+## Separating merged showers
 
-With `split=True`, a single-peak cluster whose per-dof metric is poor is
-tested against a two-shower hypothesis (both methods use the same
-machinery, differing only in the metric):
+With `split=True`, a single-peak cluster is tested against a two-shower
+hypothesis (both methods use the same machinery, differing only in the
+metric; the full comparison is on [overlapping showers](./two-gamma)):
 
 1. first and second moments of the cluster give the principal axis;
 2. scanning the energy asymmetry `a = (E1-E2)/E` seeds the pair — the
@@ -102,24 +84,25 @@ showers with a combined variance. For the LL metric each cell is scored
 once, against the shower predicting the larger share, after subtracting
 the other shower's predicted contribution.
 
-## Generating the tables
+## Measured performance
 
-The asset ships separately from the library (it is ~1 GB for 7 energies).
-The generation chain (see the study workspace for the concrete scripts):
+20×20 PbWO₄ (2.05 cm cells), photons with the full response chain,
+compared against the [χ² fit](./chi2-method) on identical events:
 
-1. **simulate**: fixed-energy photon point-gun runs on a fine impact grid
-   covering one cell octant (1326 impacts at 0.01-cell steps), full
-   response chain with smearing and sparsification;
-2. **fill**: each run's hits become a sparse per-impact histogram partial
-   (`g4cal.llprof fill`);
-3. **merge**: partials of one energy combine into a dense per-node table
-   (`g4cal.llprof merge`), one npz per energy;
-4. **prepare**: `830_llprof_asset.py` applies the steps above and writes
-   the single binary `ILLLPROF` asset consumed by
-   `ilreco_config_load_ll_profiles()` / `ll_profiles=`.
+![single-photon comparison](./ll-single-comparison.png)
 
-Repeat with your own geometry and response model to produce tables for a
-different calorimeter.
+- **Single-photon positions**: 9–13 % smaller σ68 at 1–10 GeV, and the
+  systematic mid-cell pull is up to 3× smaller. The largest gain is for
+  photons near cell edges at low energy; the one exception is 0.5 GeV
+  photons at the exact cell center (slightly worse).
+- **Single-photon energies**: identical by construction (shared path).
+- **Merged clusters**: at the same wrong-split rate the LL decision
+  recognizes ~2× more genuinely merged two-photon clusters, and divides
+  the cluster energy between the two photons markedly better — see
+  [overlapping showers](./two-gamma) for the full study.
+- **Speed**: without the split stage the LL fit is *faster* than the χ²
+  fit (node-grid lookups vs repeated interpolation); with the split on it
+  is currently slower because it tests every single-peak cluster.
 
 ## Known limitations (v1)
 

@@ -61,3 +61,13 @@ GitHub Actions:
   UBSan run and cppcheck/clang-tidy (informational), benchmark artifact;
 - **python** — build the wheel and run the pytest gate on Linux and macOS;
 - **docs** — build this site and deploy it to GitHub Pages.
+
+## Producing detector tables
+
+Both reconstruction metrics run against detector-specific tables that are
+generated once per calorimeter, outside the library:
+
+- [Generating shower profiles](./generating-profiles) — the `.dat` file
+  the χ² method, the containment correction, and the energy sharing use;
+- [Generating likelihood tables](./generating-ll-tables) — the binary
+  asset the [log-likelihood method](./log-likelihood) loads.
