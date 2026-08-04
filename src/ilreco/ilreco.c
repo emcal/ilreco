@@ -113,6 +113,11 @@ struct ilreco_workspace {
     int32_t *iwork;        /* [madr]  subcluster-glue address shuffle         */
     double  *dwork;        /* [madr]  subcluster-glue energy shuffle          */
     /* process_cluster / gamma_cluster scratch */
+    int32_t shared_cluster; /* set while fitting the per-peak SHARED energies
+                               of a multi-peak cluster: those are deterministic
+                               profile fractions, not single-shower samples, so
+                               the LL tables do not apply — the fit falls back
+                               to the chi2 metric (see docs, "known limits")  */
     int32_t *iazero;       /* [8*madr+2] zero-signal neighbor addresses       */
     int32_t *iwrk;         /* [(_MPK_+1) x stride] per-peak integer weights   */
     int32_t *idp;          /* [(_MPK_+1) x stride] per-peak deposit shares    */
@@ -691,6 +696,8 @@ static void add_single_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
 
   const double  chisq1  = 90.; // 3.0 value of chi2 for preliminary seperation
 
+  wk->shared_cluster = 0;      // whole single-peak cluster: LL tables apply
+
   int32_t n1  = ++(*nadcgam);
   int32_t ic  = ipnpk[1];
   int32_t ix  = ia[ic]/cf->offset;
@@ -754,6 +761,8 @@ static void add_many_adcgam(const ilreco_config *cf, ilreco_workspace *wk,
   const int32_t     niter   =   6;
   int32_t ngam0 = *nadcgam;
   int32_t igmpk[_MPK_][3];
+
+  wk->shared_cluster = 1;      // per-peak SHARED energies below: no LL tables
 
   double ratio = 1.;
   for(int32_t iter = 1; iter <= niter; ++iter) {
@@ -1048,7 +1057,8 @@ static void gamma_cluster(const ilreco_config *cf, ilreco_workspace *wk,
   mom1_cluster(cf,nadc,ia,id,nzero,iazero,e1,x1,y1); // get initial e,x,y
   if(nadc <= 0) return;
 
-  if(cf->method == ILRECO_METHOD_LOG_LIKELIHOOD && cf->ll_nll) {
+  if(cf->method == ILRECO_METHOD_LOG_LIKELIHOOD && cf->ll_nll &&
+     !wk->shared_cluster) {
     // LL method: energy stays the moments estimate (spec: keep the cluster
     // energy calculation as it is); position and split come from the tables
     if(*e1 <= 0.) return;

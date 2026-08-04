@@ -127,6 +127,13 @@ different calorimeter.
   (crack-impact artifact of the ideal training geometry).
 - Overlapping showers are scored with the simpler per-peak assignment
   above; a joint two-shower likelihood is a recorded future improvement.
+- Multi-peak clusters: the per-peak SHARED cell energies produced by the
+  iterative profile sharing are deterministic profile fractions, not
+  single-shower samples — the tables do not describe them, and a measured
+  2x position degradation resulted. The LL method therefore falls back to
+  the chi2-metric position fit for shared clusters (single-peak clusters,
+  the vast majority, use the full LL fit). A proper joint likelihood for
+  overlaps would supersede this.
 - The energy is not likelihood-refined (kept from the moments estimate).
 - `split_threshold` defaults to 0.5 per dof pending tuning on simulated
   two-photon samples.
