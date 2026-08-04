@@ -34,3 +34,5 @@ reconstruction of multiple simulated datasets.
 - [Python API](./python-api) — numpy tables in, numpy tables out
 - [Shower profiles](./profiles) — what the "weights" file is and when you
   need your own
+- [The log-likelihood method](./log-likelihood) — tabulated-probability
+  position fit and two-gamma separation (`method="log_likelihood"`)

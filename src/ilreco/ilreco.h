@@ -69,6 +69,38 @@ void ilreco_config_set_seed_threshold(ilreco_config *cfg, double min_seed_gev);
  * affected. Ignored when a cell mask is set. */
 void ilreco_config_set_hole_classification(ilreco_config *cfg, int32_t enabled);
 
+/* Position-fit / split metric. CHI_SQUARE is the historic profile chi2;
+ * LOG_LIKELIHOOD maximizes tabulated per-cell likelihoods (requires
+ * ilreco_config_load_ll_profiles first). Default CHI_SQUARE. */
+enum {
+    ILRECO_METHOD_CHI_SQUARE    = 0,
+    ILRECO_METHOD_LOG_LIKELIHOOD = 1
+};
+
+/* Select the reconstruction metric. Returns 0, or -1 for an unknown method
+ * or LOG_LIKELIHOOD without loaded LL tables. */
+int32_t ilreco_config_set_method(ilreco_config *cfg, int32_t method);
+
+/* Load per-energy log-likelihood tables (binary asset written by the table
+ * preparation scripts; magic "ILLLPROF"). For every cell-offset node the
+ * asset stores nll(f) = -ln(p(f)/pmax) on a log-f grid plus nll(0); the
+ * table nearest in log-energy to a cluster is used. Returns 0 on success,
+ * -1 with a message in errbuf on failure. */
+int32_t ilreco_config_load_ll_profiles(ilreco_config *cfg, const char *path,
+                                       char *errbuf, size_t errbuf_len);
+
+/* Enable the second-order two-gamma separation of single-peak clusters
+ * (default disabled, matching the historic library where the separation
+ * stage was absent). With CHI_SQUARE this is the reconstructed old
+ * moments + chi2 algorithm; with LOG_LIKELIHOOD the same geometry driven
+ * by the likelihood. */
+void ilreco_config_set_split(ilreco_config *cfg, int32_t enabled);
+
+/* Split acceptance threshold: the per-degree-of-freedom metric improvement
+ * (chi2/ndof or nll/ndof) the two-gamma hypothesis must deliver
+ * (default 0.5; determined during tuning). */
+void ilreco_config_set_split_threshold(ilreco_config *cfg, double delta);
+
 /* Cell-existence mask for non-rectangular shapes (circular calorimeters,
  * asymmetric beam holes, dead regions). mask[row*n_cols + col] != 0 means the
  * cell physically exists; the array is copied. Effects:

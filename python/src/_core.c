@@ -195,6 +195,68 @@ static PyObject *Calorimeter_set_zcal(CalorimeterObject *self,
     Py_RETURN_NONE;
 }
 
+static PyObject *Calorimeter_load_ll_profiles(CalorimeterObject *self,
+                                              PyObject *path_object) {
+    if (require_not_started(self, "load_ll_profiles") < 0) {
+        return NULL;
+    }
+    const char *path = PyUnicode_AsUTF8(path_object);
+    if (!path) {
+        return NULL;
+    }
+    char error[256] = {0};
+    if (ilreco_config_load_ll_profiles(self->config, path,
+                                       error, sizeof error) != 0) {
+        PyErr_Format(PyExc_ValueError, "load_ll_profiles failed: %s", error);
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *Calorimeter_set_method(CalorimeterObject *self,
+                                        PyObject *method_object) {
+    if (require_not_started(self, "set_method") < 0) {
+        return NULL;
+    }
+    const long method = PyLong_AsLong(method_object);
+    if (method == -1 && PyErr_Occurred()) {
+        return NULL;
+    }
+    if (ilreco_config_set_method(self->config, (int32_t)method) != 0) {
+        PyErr_SetString(PyExc_ValueError,
+                        "unknown method, or LOG_LIKELIHOOD selected before "
+                        "load_ll_profiles");
+        return NULL;
+    }
+    Py_RETURN_NONE;
+}
+
+static PyObject *Calorimeter_set_split(CalorimeterObject *self,
+                                       PyObject *enabled_object) {
+    if (require_not_started(self, "set_split") < 0) {
+        return NULL;
+    }
+    const long enabled = PyLong_AsLong(enabled_object);
+    if (enabled == -1 && PyErr_Occurred()) {
+        return NULL;
+    }
+    ilreco_config_set_split(self->config, (int32_t)enabled);
+    Py_RETURN_NONE;
+}
+
+static PyObject *Calorimeter_set_split_threshold(CalorimeterObject *self,
+                                                 PyObject *delta_object) {
+    if (require_not_started(self, "set_split_threshold") < 0) {
+        return NULL;
+    }
+    const double delta = PyFloat_AsDouble(delta_object);
+    if (delta == -1.0 && PyErr_Occurred()) {
+        return NULL;
+    }
+    ilreco_config_set_split_threshold(self->config, delta);
+    Py_RETURN_NONE;
+}
+
 /* Growable per-call output buffers (plain C memory; copied into numpy arrays
  * only after the GIL is re-acquired). */
 typedef struct {
@@ -478,6 +540,16 @@ static PyMethodDef Calorimeter_methods[] = {
      "cluster seed threshold in GeV"},
     {"set_zcal", (PyCFunction)Calorimeter_set_zcal, METH_O,
      "target-to-calorimeter distance in cm (two-gamma separation cut)"},
+    {"load_ll_profiles", (PyCFunction)Calorimeter_load_ll_profiles, METH_O,
+     "load_ll_profiles(path) — per-energy log-likelihood tables (ILLLPROF "
+     "binary asset)"},
+    {"set_method", (PyCFunction)Calorimeter_set_method, METH_O,
+     "0 = chi-square (default), 1 = log-likelihood (needs load_ll_profiles "
+     "first)"},
+    {"set_split", (PyCFunction)Calorimeter_set_split, METH_O,
+     "enable/disable second-order two-gamma separation"},
+    {"set_split_threshold", (PyCFunction)Calorimeter_set_split_threshold,
+     METH_O, "per-dof metric improvement required to accept a split"},
     {NULL, NULL, 0, NULL}};
 
 static PyGetSetDef Calorimeter_getset[] = {

@@ -153,13 +153,25 @@ class Calorimeter:
 
     ``profile`` is ``"pwo"`` (2.05 cm PbWO4, default), ``"lg"`` (lead
     glass), or a path to your own table (see the profile documentation).
+
+    ``method`` selects the position-fit / split metric: ``"chi_square"``
+    (historic, default) or ``"log_likelihood"``, which needs
+    ``ll_profiles=`` — the path to the per-energy log-likelihood table
+    asset (see the LL method documentation). ``split=True`` enables the
+    second-order two-gamma separation of single-peak clusters (off by
+    default, matching the historic library); ``split_threshold`` is the
+    per-dof metric improvement a split must deliver.
     """
 
     def __init__(self, n_cols: int | None = None, n_rows: int | None = None,
                  *, mask=None, hole_size: int | None = None,
                  profile: str | os.PathLike = "pwo",
                  seed_threshold_gev: float | None = None,
-                 zcal_cm: float | None = None):
+                 zcal_cm: float | None = None,
+                 method: str = "chi_square",
+                 ll_profiles: str | os.PathLike | None = None,
+                 split: bool = False,
+                 split_threshold: float | None = None):
         if mask is not None:
             mask = np.asarray(mask)
             if mask.ndim != 2:
@@ -192,6 +204,22 @@ class Calorimeter:
             self._core.set_seed_threshold(float(seed_threshold_gev))
         if zcal_cm is not None:
             self._core.set_zcal(float(zcal_cm))
+
+        methods = {"chi_square": 0, "log_likelihood": 1}
+        if method not in methods:
+            raise ValueError(f"method must be one of {sorted(methods)}, "
+                             f"got {method!r}")
+        if ll_profiles is not None:
+            self._core.load_ll_profiles(os.fspath(ll_profiles))
+        elif method == "log_likelihood":
+            raise ValueError("method='log_likelihood' needs ll_profiles=")
+        if method != "chi_square":
+            self._core.set_method(methods[method])
+        if split:
+            self._core.set_split(1)
+        if split_threshold is not None:
+            self._core.set_split_threshold(float(split_threshold))
+        self.method = method
         self.n_cols = int(n_cols)
         self.n_rows = int(n_rows)
 
