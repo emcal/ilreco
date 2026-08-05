@@ -1394,12 +1394,18 @@ static double ll_nll_cluster(const ilreco_config *cf, int32_t tab,
 
 /* minimize total nll over the 0.01-cell node grid: coarse-to-fine 4-neighbor
  * descent, then the likelihood-weighted average of the best 4 nodes of the
- * final 3x3 neighborhood */
+ * final 3x3 neighborhood. The fit is confined to +-1 cell around the moments
+ * seed: a legitimate single-shower correction is always sub-cell, and the
+ * confinement removes the pathological attractor at the table rim (cells
+ * beyond the tabulated 5-cell offset contribute nll = 0, so a runaway
+ * hypothesis far from the cluster would look artificially likely). */
 static double ll_fit_position(const ilreco_config *cf, int32_t tab,
                               int32_t nadc, int32_t *ia, double *id,
                               int32_t nzero, int32_t *iazero,
                               double e, double *x, double *y) {
   int32_t gx = nint((*x)*1.e2), gy = nint((*y)*1.e2);
+  const int32_t gx_min = gx-100, gx_max = gx+100;
+  const int32_t gy_min = gy-100, gy_max = gy+100;
   double best = ll_nll_cluster(cf,tab,nadc,ia,id,nzero,iazero,e,gx*1.e-2,gy*1.e-2);
   const int32_t steps[3] = {5, 2, 1};
   int32_t nev = 0;
@@ -1410,8 +1416,10 @@ static double ll_fit_position(const ilreco_config *cf, int32_t tab,
       double bnll = best;
       const int32_t dxs[4] = {step,-step,0,0}, dys[4] = {0,0,step,-step};
       for(int32_t k = 0; k < 4; ++k) {
+        int32_t cx = gx+dxs[k], cy = gy+dys[k];
+        if(cx<gx_min || cx>gx_max || cy<gy_min || cy>gy_max) continue;
         double v = ll_nll_cluster(cf,tab,nadc,ia,id,nzero,iazero,e,
-                                  (gx+dxs[k])*1.e-2,(gy+dys[k])*1.e-2);
+                                  cx*1.e-2,cy*1.e-2);
         ++nev;
         if(v<bnll) {bnll = v; bdx = dxs[k]; bdy = dys[k];}
       }

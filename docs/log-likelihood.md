@@ -104,27 +104,96 @@ compared against the [χ² fit](./chi2-method) on identical events:
   fit (node-grid lookups vs repeated interpolation); with the split on it
   is currently slower because it tests every single-peak cluster.
 
-## Known limitations (v1)
+## Edge cases and failure behavior
 
-- Table nodes at offsets ≡ 50 (mod 100) are neighbor interpolations
-  (crack-impact artifact of the ideal training geometry).
-- Overlapping showers are scored with the simpler per-peak assignment
-  above; a joint two-shower likelihood is a recorded future improvement.
-- Multi-peak clusters: the per-peak SHARED cell energies produced by the
-  iterative profile sharing are deterministic profile fractions, not
-  single-shower samples — the tables do not describe them, and a measured
-  2x position degradation resulted. The LL method therefore falls back to
-  the chi2-metric position fit for shared clusters (single-peak clusters,
-  the vast majority, use the full LL fit). A proper joint likelihood for
-  overlaps would supersede this.
-- The energy is not likelihood-refined (kept from the moments estimate).
-- `split_threshold` defaults to 0.5 per dof pending tuning on simulated
-  two-photon samples.
-- Table selection is nearest-in-log-energy; interpolating `nll` between
-  the two bracketing energy tables is a recorded improvement for the
-  tuning phase.
-- A table with missing nodes (incomplete production) must not be shipped:
-  empty nodes evaluate as "no information" (nll = 0), which makes hole
-  patterns attractive to the position fit. Leave such an energy out of the
-  asset — clusters fall back to the nearest complete table in log-energy —
-  until the production is complete.
+What the method does when inputs are not the happy path. Everything here
+is deliberate; "refused" means an error return, never a crash or exit.
+
+**Loading and configuration**
+
+- A missing, unreadable, truncated, or foreign table file is **refused at
+  load** with a message (`ilreco_config_load_ll_profiles` returns −1, the
+  Python constructor raises `ValueError`). A corrupt header, an
+  unsupported version, and energy blocks out of ascending order are all
+  detected. On failure the configuration keeps whatever tables it had
+  before — a failed reload cannot leave it half-updated.
+- Selecting `method="log_likelihood"` **without loaded tables is refused**
+  — you cannot configure a calorimeter that would silently have nothing to
+  evaluate. (Defensively, if the reconstruction ever ran in LL mode with
+  no tables, it falls through to the χ² path rather than crash.)
+- The χ² profile is still **required**: the energy path, the containment
+  correction, and the sharing of multi-peak clusters always use it.
+
+**Cluster energy vs the tabulated energies**
+
+- The table **nearest in log-energy** to the cluster's reconstructed
+  energy is used; there is no interpolation and no extrapolation. A
+  cluster far outside the tabulated range is scored against the nearest
+  table and the resolution advantage degrades gracefully toward (or
+  below) the χ² fit — measured example: 20 GeV photons scored against a
+  10 GeV table resolve to 1.4 mm versus 0.64 mm for χ². Ship tables
+  covering your energy range.
+- The selection uses the *reconstructed* energy, so a badly mismeasured
+  cluster may be scored against a neighboring energy's table — a
+  second-order effect, since neighboring tables differ smoothly.
+- A **non-positive cluster energy** (pathological input) skips the LL fit
+  entirely; the cluster keeps its moments position, as in the χ² path.
+
+**Geometry and range**
+
+- Cells (and silent neighbors) **beyond the tabulated 5-cell offset**
+  contribute nothing — "no information", the same for every hypothesis.
+- The position fit is **confined to ±1 cell around the moments seed**. A
+  genuine single-shower correction is always sub-cell; the confinement
+  also removes a pathological attractor — far from the cluster all cells
+  would fall outside the tabulated range and a runaway hypothesis would
+  look artificially "likely".
+- Fractions outside the binned range are clamped to the first/last bin;
+  cells with **zero recorded energy** are scored with the dedicated
+  censored-zero value `nll(0)` (see above), including cells silent
+  because of the readout threshold.
+- The **cell-existence mask** works as in the χ² path: cells in a beam
+  hole or outside the calorimeter are neither expected nor punished, and
+  clusters at edges simply have fewer informative neighbors.
+
+**Table content**
+
+- A table with **missing (empty) nodes must never be shipped**: an empty
+  node is indistinguishable from "beyond range" at run time and attracts
+  the fit. Leave incomplete energies out of the asset — see
+  [generating likelihood tables](./generating-ll-tables) for this and the
+  other preparation-time pitfalls (crack nodes, zero-probability checks).
+
+**Interpreting the output**
+
+- The `chi2` field of a cluster carries `nll/ndof` under this method — a
+  different scale from χ²/ndof. Any analysis cut on fit quality must be
+  retuned when switching methods, and clusters reconstructed by the two
+  methods must not be mixed in one quality cut.
+- Multi-peak clusters report the χ²-metric fit (see limitations below),
+  so within one event the `chi2` field can legitimately mix the two
+  scales between single-peak and multi-peak clusters.
+
+## Known limitations (v1) and planned improvements
+
+- **Multi-peak clusters keep the χ² fit.** The per-peak *shared* cell
+  energies produced by the iterative profile sharing are deterministic
+  profile fractions, not single-shower samples — the tables do not
+  describe them, and using them anyway degraded split-pair positions 2×.
+  Single-peak clusters (the vast majority) use the full LL fit.
+- **Overlapping showers are scored per peak** (partner-subtracted), not
+  with a joint two-shower likelihood; the joint fit is the planned cure
+  for both the shared-cluster fallback above and the residual split-pair
+  position deficit.
+- **The energy is not likelihood-refined** — it stays the moments +
+  containment estimate (deliberate for now; refinement is a possible
+  extension).
+- **No interpolation between energy tables** (nearest-in-log-energy only);
+  interpolating `nll` between the bracketing tables is a recorded
+  improvement for the tuning phase.
+- **Table nodes at offsets ≡ 50 (mod 100)** are neighbor interpolations —
+  a training-geometry artifact, see
+  [generating likelihood tables](./generating-ll-tables).
+- **`split_threshold` default (0.5/dof) is provisional** pending tuning;
+  choose it from your wrong-split budget
+  ([overlapping showers](./two-gamma)).
