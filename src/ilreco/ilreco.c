@@ -1121,7 +1121,7 @@ static void gamma_cluster(const ilreco_config *cf, ilreco_workspace *wk,
     if(fabs(stepx)<stepmin && fabs(stepy)<stepmin) break;   // terminate: steps are too small already
 
     double chi00 = chisq1_cluser(cf,nadc,ia,id,nzero,iazero,*e1,x0+stepx,y0+stepy);
-    if(chi0<chi00)  break;    // at min, terminate
+    if(chi0<=chi00) break;    // at min, terminate; also on an exact tie, which would otherwise cycle between two points forever
     chi0 = chi00;
     x0  += stepx;
     y0  += stepy;
